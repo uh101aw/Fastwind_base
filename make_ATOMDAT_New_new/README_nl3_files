@@ -1,0 +1,70 @@
+changes in nl3-files when running script_nl3
+
+note: short files are without add. H/He files,
+       long files include add. H/He files (currently, 16 lines more)
+       
+*info* file is always ascii       
+
+mkatom ...
+
+creates nl3info, nl3i, nl3a, nl3g  in fw_data/Line-List-Bin-Source
+        short, binary
+	
+nl3info compared with wmbasic_data/nl3info  short, should be identical
+
+then
+
+nl3 files moved to fw_data_new   fw_data/Line-List-Bin-Source empty, 
+
+fw_data_new now contains nl3info, nl3i, nl3a, nl3g short, binary
+
+
+switch to dir_atomnl2_meta
+
+meta_2.0.eo uses nl3info, nl3i, nl3a, nl3g from fpath2 = fw_data_new
+        defined in metacom: short, binary
+	
+writes to (locally, i.e. dir_atomnl2_meta
+        nl3info_all, nl3i_all_ascii, nl3a_all_ascii, nl3g_all_ascii
+        short, ascii. 
+	At this point, nl3info in fw_user_data and nl3info_all in
+        dir_atomnl2_meta should be equal (except format)
+	
+switch to make_...  (=main) directory
+       
+conv_ascii_add_HHelines reads 
+       nl3i_all_ascii, nl3a_all_ascii, nl3g_all_ascii from dir_atomnl2_meta
+       short, ascii
+       and fw_data_new: nl3info (short)
+       
+and creates       
+       nl3info_all, nl3i_all, nl3a_all, nl3g_all in fw_data_new
+       long, binary 
+       
+at this point, we have the following files
+      
+dir_atomnl2_meta: nl3i_all_ascii, nl3a_all_ascii, nl3g_all_ascii 
+                  short, ascii
+                  nl3info_all short_ascii
+		  
+fw_data_new: nl3info, nl3i, nl3a, nl3g (short, binary)
+             nl3info_all, nl3i_all, nl3a_all, nl3g_all (long, binary)
+	     
+at this point, nl3info (created with mkatom) should be short
+               and identical to nl3info_all in dir_atomnl2_meta
+	       nl3info_all in fw_user should be different (long)
+	       
+finally, all nl3? files in fw_data_new deleted. 
+
+-------------------------------------------------------------------------
+following files survive:
+
+dir_atomnl2_meta: nl3i_all_ascii, nl3a_all_ascii, nl3g_all_ascii 
+                  short, ascii
+                  nl3info_all short_ascii
+
+fw_data_new: nl3info (short, binary)
+             nl3info_all, nl3i_all, nl3a_all, nl3g_all (long, binary)
+	     
+will be deleted, except for nl3info and nl3info_all with script_reset	     
+            

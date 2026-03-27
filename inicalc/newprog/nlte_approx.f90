@@ -1,0 +1,11366 @@
+Module version_nlte_approx
+! WRITTEN:
+! 02/00 by JP
+
+! HISTORY
+! The first versions of this code are a modified version
+! of the corresponding subroutines of "dice3.f" (written by
+! Uwe Springmann) in the spirit of Abbott 1982
+! completely updated from version 4.0 on to account for
+! separation of different spin systems
+! from version 5.0 on, rigorous NLTE treatment for "selected" elements
+! possible. In case, modify subroutine select.
+  
+
+! version 1.0 03/02/2000
+
+! version 1.1 06/05/2000 - check for tau-line to decide which
+!   zcorr has to be taken
+!   - thermalisation of lines
+!   - ALI
+
+! version 1.1 Oct. 19th 2000; accuracy for deltatradj changed
+
+! version 2.0 Feb. 12th 2001; changes for A-stars included
+!   NOTE: if NLTE-treatment only for hydrogen, helium not considered also here:
+!   indirect influence over different electron density accounted for.
+
+! version 2.1 Feb. 26th 2001; changes for A-stars etc. finalized
+
+! version 2.2 March 1st 2001: ALI treatment modified (ZETA term),
+!   line collisions now consistent
+
+! version 3.0 March 14th 2001: averaged metal line background included
+
+! version 3.1 April 2nd 2001: finalized metallic line background
+
+! version 3.1.1 April 10th 2001: smaller corrections, &
+!   mostly  to allow for -nan compilation
+
+! version 3.1.2 April 12th 2001: bug in line treatment (lines from ground
+!   levels) cured, freq. range for line
+!   list at lower temp. modified;
+!   metal line background only calculated
+!   at cont. freqs.
+
+! version 3.1.3 April 24th 2001: xmet can be either
+!   positive (scaling of metal MASS fractions)
+!   or
+!   negative(scaling of metal NUMBER fractions)
+
+! version 3.1.4 May 3rd 2001: correct abundances by Anders/Grevesse and
+!   updates
+
+! version 3.1.5 May 18th 2001: vturb also in line background
+
+! version 3.1.6 June 21st 2001: blocking window enlarged for hot temperatures
+
+! version 4.0   Jan 2003: approx. nlte completely changed (most important:
+!   separation of different spin systems)
+
+! version 3.1.6.alpha May 7th 2002: begin of work with explicit NLTE atoms
+
+! version 3.1.6.beta  April 2003: Including Tcorr with metal background
+
+! version 4.1 June 2003: unification of ver 4.0 and 3.1.6.beta
+
+! version 5.0 June 2003: rigorous NLTE treatment for selected atoms
+!   (with jatom_full = 1, chosen in subroutine select)
+!   rates simplified where possible, &
+!   T-correction from corresponding transitions
+!   (-> new atomic data file-path: ATOMDAT_NEW!)
+
+! version 5.1 July 2003: inclusion of clumping, version compatible with
+!   nlte_8.2 and higher
+!   version 5.1.1 Sept 2003: inclusion of net derivatives of CBB heating- &
+!   cooling term to ensure consistent treatment
+!   also in "LTE" region!
+!   (note that the direct term cancel by def.)
+
+! version 5.1.2 Oct 2003: some smaller changes, bug in nindex (sumopal)
+!   removed
+!   rigorous check of packing algorithm in sumopal performed
+
+! version 5.2 Nov 2004:  new atomic data checked, averaging of collion/
+!   scattering terms in sumopal reformulated (strict
+!   consistency with opacity mean
+
+! version 5.3 March 2004: improved treatment of sampling to ensure
+!   that at each value of vturb a similar sampling
+!   width is present.
+!   bug in subroutine opacity identified, which
+!   has a small influence on the photospheric
+!   density stratification. (Too few edges considered)
+
+! version 5.3.1 June 2004: check for occ(meta)=0 (in partit) only if
+!   Teff > 9500, &
+!   since for lower Teff it can become zero because
+!   of underflow. (without this hack, program stops
+!   with 'error in m-state(done)'
+
+! version 5.3.2 June 2004: use all elements (except H/He) for blocking
+!   calculations
+!   different treatment for explicit elements
+!   only with respect to continuum opacities and
+!   cooling/heating. Might lead to somewhat too strong
+!   self-shadowing, but is more consistent than
+!   old approach
+!   note: opametinf gives edges for calculations of
+!   bf opacities, indexopa gives all edges!
+
+! version 5.3.3 May 2005:  full line list in ram if parameter ram='big'
+!   this is the default, requiring roughly 100 MB RAM
+!   old approach (reading each time) requires ram='small'
+
+! version 5.3.4 Sept.2005: output of abundances to file ABUNDAN
+!   file METAL_IDL always created, &
+!   solar Helium abundance 0.1 in
+!   background abundances (used for scaling)
+!   solar-abundances from data file
+!   (ATOMDAT_NEW/abund_solar)
+!   abundance changes for explicit and background
+!   elements now from INDAT.DAT
+
+! version 5.4 March 2006:  for nlte.f90 from version 9.0 and higher
+!   REQUIRES NEW nlte_type.f90
+!   among other things,
+!   routines RESTART and SAVE_METAL_INFO changed,
+!   required for nlte versions 9.0 and higher
+!   iterative improvement of solution of rate-equations
+!   calculated with residuum in qp precision
+!   (possible with recent versions of intel compiler)
+
+! version 6.0 April 2006:   new treatment of bf transitions with excited upper
+!   levels for "selected" elements
+!   (non-selected elements still treated in the old way,
+!   since method depends on assumption of ionization
+!   to ground-states).
+!   for consistency, transition edges
+!   new file atomnl2_meta_v2.0 required!!!!
+!   (inclusion of upper level of bf transition)
+!   remaining approximation: use ONE representative
+!   transition in case more bf transitions from one
+!   lower lever are present (the strongest one, with
+!   summed up alphas)
+!   selected elements assumed to be in LTE only from
+!   LWION1 on (taur > 2)
+
+! version 6.0.1 Nov. 2006:  convergence of bg elemets even if emax > 0.03,
+!   to allow convergence even if explicit ions oscillate
+
+! version 6.1 June 2009:    metal ionization fractions of fjk stored and
+!   restored
+!   at restart (file METAL_RESTART), to obtain consistent
+!   ILOW, IMAX (explicit elements) in subroutine
+!   ILOWIMAX_NLTE. Old models can still be used. In
+!   this case, the lte version of fjk is exploited.
+!   smaller modifications w.r.t. restart
+
+! version 6.2 July 2009:    inclusion of dielectronic recombination to
+!   background elements (similar as in nlte.f90, v9.6)
+!   new data-file atomnldr required
+
+! version 6.3 Sept 2009:    Stark broadening of (quasi-) resonance lines from
+!   metals and H-lines close to Lyman-jump for bg-elements.
+!   (OPTSTARK=.TRUE.)
+!   Global control options in new module nlte_opt
+!   needs nlte-version v9.9 or higher and nlte_type v1.2
+
+! version 7.0 Sept 2009:    Inclusion of work done in March 2009
+!   correct treatment of photospheric/cmf line transfer for
+!   lines from selected background elements
+!   (OPTPHOTLINES=.TRUE.)
+!   DELTATRADJ explicitely set to zero in IONIS when
+!   LTE conditions (to ensure correct calculation
+!   after update of phot.struct).
+
+! version 7.1 Dec 2009:     New routine jbar_phot_diff
+!   Jan 2010:     occ(imax+1) discarded from the global
+!   error budget if ifrac(imax+1) < 1.d-12
+!   as well, changes from minor ions discarded in the
+!   outer wind as long as they are below 3.d-2.
+!   kl_tables moved to DATA/kl_tables, path updated
+!   if restart and changes in abundances of specific
+!   elements > 20%, metallic background re-calculated
+
+! version 7.2 June 2010:    BUG in ILOWIMAX_NLTE (zeff correction) removed
+!   standard check for numerical precision removed
+
+! version 7.2.1 April 2012: names1 moved to module nlte_app;
+!   from v11.8.0 on in module fastwind_params
+
+! version 7.2.2 Nov/Dez 2012: bug in subroutine select fixed (when very low z)
+!   subroutine indexfre slightly changed to improve restart
+
+! version 7.2.3 April 2013: Treatment of nlambox_ly slightly changed
+!   (in correspondance of changes in nlte.f90 V10.1.5)
+!   affected subroutines: SUMOPAL_NLTE AND SUMOPAL_LTE
+
+! version 7.3.0 October 2014: several changes to allow for inclusion of X-ray
+!   transfer and to improve convergence of bg elements
+
+! version 7.4.0 October 2014: inclusion of optically thick clumping
+!   (porosity and vorosity), programmed by Jon Sundqvist)
+
+! version 8.0 Jan 2015: changes for new approach including complete
+!   cmf-solution and later
+!   NOTE: dummy arguments of nlte_approx changed!!!!
+!   new routine: calc_changes, provides 'convergence-table'
+!   old hack in routine partit changed, since old hack
+!   could lead to oscillations. New approach ensures
+!   a smooth transition to lower excitation factors
+!   if original approach leads to too large values.
+!   NOTE1: porosity and vorosity still to be included
+!   in cmf_all
+
+! version 8.1 Oct. 2016:     photo-integrals for ground-state slightly changed
+!   in NETMET_MET, to allow for AlIV (as in v7.4.2)
+
+
+! version 8.2 March/April 2017: low/up to 1/2 byte, subr. update_occng, error
+!   control in sumfjk, lots of small stuff,
+!   NIII always calculated!
+!   (CHECK OUT IF YOU REALLY WANT THIS)
+
+! version 8.2.1 March 2018: some matrices increased to 4*nlev+1, to allow
+!   for 4 ions in parallel (Oxygen!)
+!   subr. select: met_imin, met_imax changed for
+!   oxygen when X-rays accounted for.
+
+! version 8.2.2 April 2018: error_met_mean introduced in rateeq
+!   subr. RESTART modified: now, met_imin, met_imax
+!   either read in from OCCNG (if existent), or
+!   calculated from subr. SELECT
+!   subr. select modified: now we check that met_imax
+!   has a considerable fraction.
+
+! version 8.2.3 July 2018:  tlumat, tulmat set to zero in sub. ILOWIMAX_NLTE
+!   to avoid non-zero entries when ionization has changed
+
+! version 8.2.4 Feb. 2019:  new variable "highest level", denoting the highest
+!   known level for a specific transition series (in
+!   dependence of lower index). In other words, it is
+!   the highest level connected to a specific lower one
+!   via an allowed transition. If no info available,
+!   highest_level = 0 (e.g., if the lower level
+!   has only transitions with UP=0.) Note the
+!   dependence on gfcut_allowed!
+
+! version 8.3.0 Oct. 2020:  compatible with gfortran
+
+! version 8.3.1 Dec. 2020:  changes for occng (approximate bg elements,
+!   outer part), as described in nlte.f90 v11.4.1
+
+! version 8.4.0 Sept. 2021: inclusion of 7.5.1/2 (old version), and
+!   very few other changes to have a consistent approach.
+
+! from v7.5,1/2:
+!   old bug removed in OPACITL (extrapolation after
+!   update of freq. grid)
+
+!   extend impact of Stark broadening in sumopal_lte
+!   and sumopal_nlte to neighbouring boxes (see comments
+!   in these routines), in a symmetric way.
+!   To this end, also calcopal has been modified.
+!   Reason is that CIII res. line (strong impact on
+!   Temp around Teff = 22kK) is sometimes located
+!   at box-boundaries, and has not the full impact
+!   with previous method. This has been cured with
+!   the new approach.
+!   For optstark=F, identical results compared to
+!   previous approach.
+!   New parameter OPT_EXTEND_H_WINGS in nlte_app to allow
+!   or forbid that new approach is used also for H
+!   (default: .FALSE.)
+!   old bug removed in OPACITL (extrapolation after
+!   update of freq. grid)
+!   If OPTSTARK, additional frequency points at center
+!   of important Stark-broadened lines evaluated
+!   (used in FRESCAL) and saved (after last iteration)
+!   in new subr. SAVE_ADD_FREQ_POINTS
+
+! version 8.4.1 March. 2022: METCONV2 only set to T if temperature has
+!   converged.
+!   Otherwise, problems with LTE-occup. numbers:
+!   Before, METCONV2 might become T even when the
+!   temperature was not converged, in case of very low
+!   metallicities
+
+!   NOTE: until here, consistency with standard path v7.4.2
+
+!   NOW, and from here on, version number consistent with standard path (+1)
+
+! version 8.5.4 March 2023:  inclusion from standard 7.5.3:
+!   few changes (OPT_EXTEND_H_WINGS default = FALSE),
+!   no line blocking in sumopal_nlte/sumopal_lte
+!   for k=8 AND up=0 (still needs to be checked)
+
+!   changes in subr. jbar_metals, to prevent
+!   stop 'more than 5 ions in parallel'
+!   for changes, look for "JO March 2023" in that routine
+
+! version 8.5.5 Sept 2023:   couple of changes (particularly regarding
+!   start) to be consistent with nlte v10.6.5.
+!   Moreover, after careful tests for O-star grid,
+!   k=8 AND up=0 statement in sumopal (from v8.5.4)
+!   commented out. Still to be checked for B-stars
+
+! version 8.5.6 Oct 2023: subr. Trad: nochange_in_metals set to F if
+!   premature return due to first iteration after Tcorr
+
+! version 8.5.6.1 March 2025: small changes in netmat_met, to allow for output
+!   of collisional rates, and to store specific heating
+!   rates via array "store"
+!   MOREOVER: improve rbf rates to excited levels
+!   when i=imax. Somewhat inconsistent now.
+
+! version 8.5.6.2 April 2025: small changes regarding vmic, see comments
+!   in nlte.f90
+
+! version 8.5.7 July 2025: choice of ilow and imax for bg metal lines
+!   should be reasonable now. Mostly three ions,
+!   but sometimes (if required) also four.
+!   Changes in subr. select and jbar_metals
+
+! version 8.6.0 Sept 2025:   vth10 in sub. fgrid_lines (used to calculate
+!   frequency boxes for approx. line-blocking/blanketing)
+!   changed. Instead of using the actual Teff (in
+!   combination with vturb), we now use a nominal value
+!   of Teff=30 kK. Using the same vth10 for all models
+!   has the advantage that the boxes are always the
+!   same (as long as wavblue and wavred remain unchanged),
+!   and there are no longer any potential discontinuities
+!   when Teff is changed by only a bit (tests by
+!   Frank Backs!), when the boxes lie at different
+!   positions, resulting in somewhat different
+!   average opacities.
+!   In the same subr. (fgrid_lines), a couple of stops
+!   have been modified to allow for a maximum photo-
+!   spheric micro-turbulence of around 40 km/s.
+
+! version 8.7.1 Oct. 2025: polished
+
+  Character (10) :: ver_nlte_app = '8.7.1'
+
+End Module
+
+
+!--------------------------------------------------------------------------- &
+
+Module nlte_app
+
+! NOTE: rates for temperature correction calculated only for
+! selected elements (OPTTCOR_SIMPLE = F, see notes in nlte.f90)
+! Thus, be careful that all important elements are included.
+
+! RBB/RBF rates are of different degree of precision
+! highest precision: radiation field CMF
+! lower precision: radiation field (lines) from static or CMF solution,
+! but only single-line approach
+! radiation field (cont) from approximate opacities/emissivities
+! lower precision: radiation field (lines) from Sobolev approx
+
+! indexcmf/indexcmf1 for explicit elements
+! : 1 Sobolev approach
+! : 2 CMF single-line
+! : 3,4,5, radiation field from cmf_complete,
+! number of depacked components is indexcmf-2
+
+
+! line indicator for background elements: jbar_bg(nlcounter, lwion1)
+! indicator = 0 do nothing (see subr. netmat_met)
+! indicator = 1 indicates very weak line -> Sobo approach correct (check)
+! indicator = 2 indicates that line has been treated with phot. RT
+! indicator = 3 indicates that line has been treated with single-line cmf RT
+! indicator = 4 (only on output, not in jbar_bg):
+! if (optcmf_all), line rate calculated in calc_tlu_met from cmf_complete
+! when inside cmf-range and sufficient quality
+
+! NOTE: after one run of nlte_app, the following info is present within
+! the various occupation numbers:
+
+! occng: 'exact' numbers for selected ions within met_imin, met_imax,
+! in dependence of depth, until LWION1-1. For not selected elements
+! and ions outside this range, only part of the occup. are present
+! (the others are zero, see below), as calculated by the approx. approach.
+
+! For l= LWION1, ND, all occup. numbers are present (until a certain
+! ionization stage, but in LTE.
+
+! occnglte: all LTE occupation numbers, identical with occng in the range
+! LWION1, nd
+
+! if LTEOPT = .TRUE., occng as calculated from IONIS AND IONIS_FULL_LTE
+! (the latter only for selected elements) and OCCUP1/2 should be equal for
+! l=LWION,ND for all levels and fairly equal for gs, 's' and 'm' levels
+! (see Puls+ 2006). In particular, the ionization fractions should be
+! (almost) equal (checked in IONIS_FULL_LTE)
+
+! occngold: 'exact' numbers for selected elements from previous iteration.
+! As occng, but only in the range met_imin, met_imax and l=1,LWION1-1.
+! All other occup. numbers are zero.
+
+! COMMENT: the above has been re-checked by JO in Sept. 2013
+
+! more detailed NOTES (Jan 2016):
+! in approximate approach, the following philosophy is present:
+
+! a) subr. IONIS/OCCUP
+! LTE: occng = LTE (for given xne) for l=LWION (<LWION1), ND for all levels
+!      occng = LTE for l=1,LWION-1 for gs, 's' and 'm' levels
+!      occng = 0 for l=1,LWION-1 for other levels
+! NLTE: occng = LTE (for given xne) for l=LWION (<LWION1), ND
+!       occng = approx. NLTE for l=1,LWION-1 for gs, 's' and 'm' levels
+!       occng = 0 for l=1,LWION-1 for other levels
+
+! b) subr. IONIS_FULL_LTE/OCCUP overwrites, for all levels at all depth points,
+!    occng with true LTE values if LTEOPT=.TRUE., for selected elements
+
+! c) subr. RATEEQ_MET overwrites, for all levels and for l=1,LWION1-1
+! occng with improved NLTE values for selected elements
+! for l=LWION1,ND, LTE-values (for actual XNE) from IONIS/IONIS_FULL_LTE
+! remain.
+
+! NOTE: also for L = LWION1, ND occng and occnglte only identical
+! for LTEOPT = .TRUE. Otherwise, differences since occng calculated with
+! xne(NLTE).
+
+! IMPORTANT COMMENT: self shadowing not correctly accounted for (in standard
+! approach)
+
+! NOTE: option METCONV2 plays only a role if OPT_OIII_ITER = T.
+! otherwise, it will be always F
+
+! ndebug= 1 minimum output (major ionization stages)
+! ndebug= 2 including ionization fractions in subr. 'ionout', file 'METAL_IDL'
+! generated
+! ndebug= 3 including partition functions
+
+! NOTE: indexel(k) =  j for explicit elements, with j corresponding to element
+! number of listed explicit elements
+! indexel(k) = -1 for background elements, except for
+! H/He: indexel(1,2) = 0 if H/He not explicit.
+! e.g., for only H as explicit element, indexel(1)=1, but indexel(2)=0, and
+! indexel(k) = -1 for the rest
+  
+  Use :: nlte_type
+  Use :: nlte_dim, Only: id_atoms, id_ndept
+  Use :: princesa_var, Only: nat, abundin => abund, weight, labat
+  Use :: fastwind_params, Only: natom, nion, nrec, nlev
+  Implicit None
+
+! nout=1 output, = 0 no output
+  Integer (i4b) :: nout
+
+  Integer (i4b) :: nwne, lwion = id_ndept
+
+  Integer (i4b) :: lomin, lniii_in, lniii_out ! range of NIII emission lines
+
+! NOTE: indexel(k) =  j for explicit elements, with j corresponding to element
+! number of listed explicit elements
+! indexel(k) = -1 for background elements, except for
+! H/He: indexel(1,2) = 0 if H/He not explicit.
+! e.g., for only H as explicit element, indexel(1)=1, but indexel(2)=0, and
+! indexel(k) = -1 for the rest
+  Integer (i4b), Dimension (natom) :: imax, jatom = 0, jmax, indexel = -1, &
+    indexbg = -1, jatom_full = 0
+  Integer (i4b), Dimension (natom) :: louter, lstat
+  Integer (i4b), Dimension (nrec) :: kel, iel, ielev, levdr, ldadr, ilin = 0, &
+    icol = 0, irbb = 0, icbb = 0, irdr = 0
+  Integer (i4b), Dimension (nrec, nlev) :: indexex, indexopa, opametinf, &
+    highest_level = 0
+  Integer (i4b), Dimension (natom, nion) :: indrec, indexfrec, calcion, &
+    indexelion
+  Integer (i4b), Dimension (natom, nion, nlev) :: ibfup, ilow, ipop
+  Integer (i4b), Dimension (natom, id_ndept) :: met_imin = 0, met_imax = 0
+
+  Real (dp), Dimension (id_ndept) :: te, wne, wion, xmuee
+  Real (dp), Dimension (natom) :: abund, vth, abund_h12
+  Real (dp) :: vth8
+
+  Real (dp), Dimension (natom, nion) :: xion, zeta
+  Real (dp), Dimension (nrec, nlev) :: crodat, alpha, beta, s
+  Real (dp), Dimension (:, :), Allocatable :: alphamet
+  Real (dp), Dimension (nrec, nlev, id_ndept) :: occng = 0.D0, &
+    occnglte = 0.D0, occngdummy = 0.D0 ! ,occngnlte=0.d0,
+  Real (dp), Dimension (nrec, nlev, id_ndept) :: coll_therm = 1.D0, &
+    corr_beta = 1.D0 !              for first NLTE
+  Real (dp), Dimension (natom, nion, nlev) :: gstat, ergion, trans, gfval
+  Real (dp), Dimension (natom, nion, id_ndept) :: fjk, upart, occ1 = 0.D0, &
+    occ1lte = 0.D0, c_n
+  Real (dp), Dimension (natom, nion, id_ndept) :: taus1, taus1new, zcorr, &
+    deltatradj = 1.D0
+
+  Real (dp), Dimension (natom, nion, id_ndept) :: occ1old = 0., occ1old2 = 0.
+! for errors etc.
+  Real (dp), Dimension (nrec, nlev, id_ndept) :: occngold = 0., occngold2 = 0.
+! for betas etc.
+
+  Real (dp), Dimension (:, :), Allocatable :: jbar_bg, alo_bg
+  Real (dp), Dimension (:, :), Allocatable :: tlu_met, tul_met
+
+  Real (dp), Dimension (nlev, id_ndept) :: c_mj
+  Real (dp), Dimension (nlev) :: zeta_mj
+
+  Character (1), Dimension (natom, nion, nlev) :: metall = ' '
+
+  Real (dp) :: teff, xmet, yhe
+  Real (dp) :: summas, xhy, xhe
+
+! JO changed Feb. 2017; for low and up only 1 byte required
+! (as long as no more than 100 levels per ion)
+! JO changed Feb. 2017; for no_comp and ncomp at max 2 byte required
+
+  Type (rbb), Dimension (35000) :: met_rbb
+  Type (cbb), Dimension (1500) :: met_cbb
+  Type (rdr), Dimension (3500) :: met_rdr
+
+End Module
+
+!-----------------------------------------------------------------------
+
+Module nlte_lines
+
+! module for approximate line treatment
+
+  Use :: nlte_type
+  Use :: nlte_dim, Only: id_ndept
+  Use :: fastwind_params, Only: names1, nbunch
+
+  Implicit None
+
+  Integer (i4b) :: nsubinter, nsubinter_frac3, nsubinter_half
+
+  Integer (i4b), Dimension (id_ndept) :: nblock
+
+  Real (dp), Dimension (id_ndept) :: vanreg, u0, wexp, clufac, clufac_forb, &
+    vanreg1
+
+  Real (dp), Dimension (:, :, :), Allocatable :: opal_aux, sum_th
+  Real (dp), Dimension (:, :), Allocatable :: sum_nth
+
+  Real (dp), Dimension (:, :), Allocatable :: opa_eff_aux, opa_eff_grid
+
+  Real (dp), Dimension (:, :), Allocatable :: opacgrid, opalgrid, fracth, &
+    fracnth
+
+  Integer (i4b), Dimension (:), Allocatable :: calcopal, calcopal1
+  Real (dp), Dimension (:), Allocatable :: fgrid
+  Real (dp), Dimension (:, :), Allocatable :: tradj_fg
+
+  Integer (i4b) :: ntotnl3, nfullrec, nrest, nlam, iblue, ired
+  Integer (i4b) :: nlamb_old, nlambox_old, nlambox_ly
+
+  Real (dp) :: wavblue, wavred, wavcon, wavcon1
+  Real (sp) :: xlamold
+
+  Integer (i4b), Dimension (:), Allocatable :: id
+  Real (sp), Dimension (:), Allocatable :: gf, xlam
+
+  Integer (i4b), Dimension (:), Allocatable :: unpacked_index_cmf
+  Real (sp), Dimension (:), Allocatable :: unpacked_gf, unpacked_xlam
+
+  Logical :: nochange_in_metals = .False., metconv1 = .True.
+
+! parameters and data for approx. Stark-broadening
+! average broadening parameter per electron according to Sahal-Brechot &
+! Segre 1971 for important UV resonance lines is a few times 10^-6.
+! 10^-5 chosen here from comparing with Tlusty fluxes.
+  Real (dp), Parameter :: gamma_stark = 1.D-5
+  Real (dp), Parameter :: xnemin = 3.D10 ! from here on, Stark broadening
+  Real (dp), Parameter :: cutoff_stark = 0.2 ! Stark profile until opal < 0.2
+! opac
+
+
+  Real (dp), Dimension (2:20) :: gamma_hyd
+  Real (dp), Dimension (0:5, 2:20) :: coeff
+
+! from fits to Stark broadened (Griem-approx) hydrogen profiles
+! average from values for Teff = 10 ... 60 kK and log ne=12...16
+! directory nlte_pub/newtemp_inner, routine stark.pro
+  Data gamma_hyd/6.07201D-05, 0.000265054, 0.000713401, 0.00145657, &
+    0.00271228, 0.00426579, 0.00621346, 0.00838173, 0.0113937, 0.0149051, &
+    0.0190546, 0.0239883, 0.0292864, 0.0349409, 0.0433179, 0.0482318, &
+    0.0532926, 0.0630957, 0.0713400/
+! in case, individual values might be included, &
+! see Table stark_table and routine rstark.pro
+! corresponding 1-sig errors in the log:
+! 0.155549    0.100630,    0.0776079,   0.0927858, &
+! 0.0844182,  0.0702213,  0.0784915,   0.0817200,   0.0858360, &
+! 0.0827682,  0.0805156,  0.0886683,   0.112444,    0.138174, &
+! 0.140156,   0.162063,   0.174066,    0.183829,    0.208001
+
+! polynomial coefficients for gamma_hyd, levels n=2,20 and
+! fit according to
+! log gamma = a(0)+a(1)*log(te/1000.)+a(2)*log(te/1000.)^2+ &
+! a(3)*log(ne)+a(4)*log(ne)^2+a(5)*log(ne)^3
+  Data coeff/ -127.27362, -0.57055, 0.29998, 26.02858, -1.81936, 0.04210, &
+    -67.17953, -0.17496, 0.10088, 13.44877, -0.93925, 0.02168, -28.26527, &
+    -0.13439, 0.07713, 5.66609, -0.41958, 0.01022, 5.92708, -0.00452, 0.01904, &
+    -1.46047, 0.07689, -0.00127, 2.57007, 0.33799, -0.09992, -0.73362, &
+    0.02434, 0.00001, 15.34906, 0.07536, 0.00987, -3.54246, 0.23310, -0.00510, &
+    44.65504, -0.12654, 0.07736, -9.97078, 0.70548, -0.01660, 20.36860, &
+    -0.09383, 0.05338, -4.68978, 0.32778, -0.00766, 56.14668, 0.03935, &
+    0.01457, -12.60169, 0.90737, -0.02172, 47.12978, 0.33801, -0.09993, &
+    -10.80985, 0.78941, -0.01916, 37.27353, 0.12374, -0.01363, -8.60983, &
+    0.63023, -0.01534, 47.03411, 0.11592, -0.01388, -10.74534, 0.78712, &
+    -0.01917, 49.41928, 0.29291, -0.05713, -11.34250, 0.83526, -0.02045, &
+    54.17860, 0.11922, 0.00540, -12.48347, 0.92934, -0.02301, 53.43937, &
+    0.07391, 0.01566, -12.35654, 0.92496, -0.02302, 79.17628, 0.45576, &
+    -0.08873, -18.10460, 1.34606, -0.03325, 73.80367, 0.23820, -0.02172, &
+    -16.78883, 1.24455, -0.03068, 55.35773, -0.01992, 0.06904, -12.83411, &
+    0.96821, -0.02430, 29.93176, 0.75624, -0.19610, -7.46984, 0.58742, &
+    -0.01538/
+
+End Module
+
+!-----------------------------------------------------------------------
+
+Module phot_lines
+
+! module for the calculation of jbar/alo for photospheric lines
+! from bg. elements
+
+  Use :: nlte_type
+
+  Implicit None
+
+  Integer (i4b), Parameter :: nbdim = 131, ntdim = 2001, nf = 21
+
+  Real (dp), Parameter :: fac = 1.1D0 ! critical ratio of
+! betaq(i,j)/betaq(i,j+1)
+  Real (dp), Parameter :: neglect = 1.D-5 ! when to neglect element of
+! Lambda-matrix
+
+
+! precalculated tables
+  Real (sp), Dimension (nbdim, ntdim) :: xk2atab, xl2atab, xl2tab, xl3atab
+  Real (sp), Dimension (nbdim) :: betatab
+  Real (sp), Dimension (ntdim) :: tautab
+  Real (sp) :: betamin, betamax, taumin, taumax
+
+  Real (dp), Dimension (nf) :: phi, pweight
+
+
+End Module
+
+!-----------------------------------------------------------------------
+
+Module phot_lines_diff
+
+! module for the calculation of jbar/alo for photospheric lines
+! from bg. elements
+
+  Use :: nlte_type
+
+  Implicit None
+
+  Integer (i4b), Parameter :: nf = 15, nmu = 3
+
+  Real (dp), Dimension (nf) :: phi, pweight
+
+  Real (dp), Dimension (nmu) :: mu, musq, wmu, wmu1, wmu2
+! angles and weights according to Sykes, 1951, MNRAS 111
+! double Gauss-Legendre, valid for weigths 1, mu and mu^2
+
+  Data mu/0.8872983346D0, 0.5D0, 0.1127016654D0/
+  Data musq/0.787298335D0, 0.25D0, 0.01270166538D0/
+  Data wmu/0.277777777778D0, 0.444444444444D0, 0.277777777778D0/
+  Data wmu1/0.2464717596D0, 0.222222222222D0, 0.03130601817D0/
+  Data wmu2/0.2186939818D0, 0.111111111111D0, 0.003528240383D0/
+
+End Module
+
+!-----------------------------------------------------------------------
+
+Subroutine nlte_approx(teffin, yhein, xmetin, rho, xne, dilfac, temp, r_in, &
+  velo_in, dvdr_in, clf, ilownl, imaxnl, nd, frenew, lteopt, ntemp, optout)
+
+! calculates ionization equilibrium
+! (the old versions in the spirit of Uwe's approach)
+
+! INPUT:
+! atomnl2_meta_v2.0, with all required data,
+! metastable levels designated by 'm',
+! first-order subordinate levels designated by 's'
+
+! dilfac with respect to R(taur=2/3). dilfac reset to unity for
+! lower radii in order to allow for transition to LTE
+
+! -----------------------------------------------------------------------
+
+  Use :: nlte_type
+  Use :: nlte_dim, Only: id_ndept, id_atoms
+
+  Use :: fund_const, Only: amh
+
+  Use :: nlte_opt, Only: optphotlines
+
+  Use :: nlte_var, Only: optlines, optcmf_all, lines, lines_in_model, &
+    almost_converged, sr, vmax, metconv2
+  Use :: nlte_app, Only: teff, yhe, xmet, xmuee, wne, wion, te, nwne, lwion, &
+    nout, alphamet, occ1, occ1lte, occng, occnglte, taus1 ! ,occngnlte
+  Use :: nlte_lines, Only: nochange_in_metals
+
+  Implicit None
+  Integer (i4b), Intent (In) :: nd, ntemp
+  Real (dp), Dimension (nd), Intent (In) :: rho, xne, dilfac, temp, r_in, &
+    velo_in, dvdr_in, clf
+  Real (dp), Intent (In) :: teffin, yhein, xmetin
+  Logical, Intent (In) :: frenew, lteopt, optout
+
+  Real (dp), Dimension (id_ndept, id_atoms), Intent (In) :: ilownl, imaxnl
+
+  Real (dp), Dimension (id_ndept) :: dvdr, vr, velo
+
+  Integer (i4b) :: i
+  Logical :: start, firstnlte, calcerr
+  Data start/.True./
+  Data firstnlte/.True./
+  Data calcerr/.False./
+
+  nout = 0
+  If (optout) nout = 1
+
+  If (id_ndept/=nd) Then
+    Write (999, *) ' stop: nlte_approx: error in nwne'
+    Stop ' nlte_approx: error in nwne'
+  End If
+
+! local variables in cgs.
+  If (.Not. lteopt) Then
+    velo = velo_in*vmax
+    vr = velo_in/r_in*vmax/sr
+    dvdr = dvdr_in*vmax/sr
+  End If
+
+  If (start .And. .Not. frenew) Then
+    Write (999, *) ' stop:  start and .not. frenew in nlte_approx'
+    Stop ' start and .not. frenew in nlte_approx'
+  End If
+
+  If (.Not. start .And. frenew) Then
+    If (.Not. allocated(alphamet)) Then
+      Write (999, *) ' stop: error in allocation status alphamet'
+      Stop ' error in allocation status alphamet'
+    End If
+    Deallocate (alphamet)
+  End If
+
+! copy variables to module nlte_app
+
+  If (start) Then
+!   FASTWIND LOG
+!   write(999,*) '          VERSION ',VER_NLTE_APP,' (nlte_approx)'
+
+    taus1 = 300.
+    nwne = nd
+    teff = teffin
+    yhe = yhein
+    xmet = xmetin
+  End If
+
+  te = temp
+  If (lteopt) Then
+    wion = 1.
+    Do i = ntemp, nd
+      If (dilfac(i)==0.75) Go To 100 ! only for finished LTE
+    End Do
+    Do i = ntemp, nd
+      If (dilfac(i)==0.5) Go To 100 ! usual LTE
+    End Do
+    Write (999, *) ' stop: lwion not found in LTE'
+    Stop ' lwion not found in LTE'
+100 lwion = i + 1
+  Else
+    wion = dilfac
+    Do i = ntemp, nd
+      If (wion(i)==1.) Exit
+    End Do
+    lwion = i
+  End If
+
+  wne = wion/xne
+  xmuee = rho*clf/(xne*amh) !       corrected (xne contains clf)
+
+! now let's calculate the ionization structure
+
+  If (start) Then
+    Call abundan(yhe, xmet, teff)
+    Call atomdat
+!   JO Sept 23: now called at first call from frescal
+!   call fgrid_lines(teff)
+    Call open_linedat
+    start = .False.
+  End If
+
+  If (lteopt) Call select(lteopt) ! select atoms
+! if(frenew .and. .not.lteopt .and. .not.firstnlte) &
+! & stop ' update of freq. grid in course of nlte-iteration'
+
+  If (frenew) Then
+    Call indexfre(lteopt)
+    If (.Not. lteopt) Call indexfrelines
+  Else If (.Not. lteopt .And. firstnlte) Then
+    If (.Not. allocated(alphamet)) Then
+      Write (999, *) ' stop: error in allocation status alphamet'
+      Stop ' error in allocation status alphamet'
+    End If
+    Deallocate (alphamet)
+    Call indexfre(lteopt)
+    firstnlte = .False.
+  End If
+
+! print*,'test_point1',lteopt
+! do i=1,nwne
+! print*,temp(i),xne(i)
+! enddo
+
+! for tests
+! if(lteopt.and.optcmf_all) then
+! print*,'previous occng saved to occngnlte'
+! occngnlte=occng
+! endif
+
+! JO Dec. 2020 (here was a bug)
+! only if majority of metals has not converged, otherwise leave approx. occup.
+! numbers
+  If (.Not. metconv2) Then
+
+!   update all occup with approximate (N)LTE-values
+    Call ionis(lteopt, ntemp, xne, dvdr, vr, clf)
+
+    If (lteopt) Then
+!     LTE treatment for selected elements at ALL depth points
+      Call ionis_full_lte(ntemp, xne)
+    End If
+
+!   update all occupation numbers (assuming that metconv2 requires
+!   a converged temp structure, i.e., no lte-updates. This is now checked when
+!   setting metconv2 (March 2022).
+    Call occup1(ntemp) !            ground state n_1/n_e
+    Call occup2(ntemp) !            n_i/(g_i * n_e)
+
+!   times n_e: now absolute values, include clf
+    Do i = ntemp, nd
+      occ1(:, :, i) = occ1(:, :, i)*xne(i)
+      occng(:, :, i) = occng(:, :, i)*xne(i)
+    End Do
+
+  End If
+
+  If (lteopt) Then
+    If (metconv2) Then
+      Write (999, *) ' stop: inconsistency: LTE UPDATE AND METCONV2!'
+      Stop ' inconsistency: LTE UPDATE AND METCONV2!'
+    End If
+    occ1lte = occ1
+    occnglte = occng
+!   print*,'test_point2',occng(83,2,50),occnglte(83,2,50)
+  Else
+!   full NLTE treatment for selected elements
+
+!   select atoms and ions (from approx. method)
+!   JO Sept. 2018
+    If (.Not. almost_converged .And. .Not. metconv2) Call select(lteopt)
+!   calculate exact value of jbar for photospheric lines from selected
+!   elements
+!   (obsframe or cmf)
+!   line opacities from occngold(1...LWION1-1)/occnglte(LWION1...ND) for
+!   selected elements and occng for approx. elements
+!   this is done also in case of optcmf_all = .true., since a couple of lines
+!   (outside interval, no individual component, selected element is also an
+!   explicit one) need the old treatment ...
+    If (optphotlines) Call jbar_metals(xne, dvdr, vr, clf, velo)
+
+!   calculate line rates for selected elements in the range 1...LWION1-1,
+!   using the CMF-radiation field and packing the individual jbars
+!   from the unpacked transitions
+    If (optcmf_all) Call calc_tlu_met(nd, clf)
+
+!   rate coefficients from occngold(1...LWION1-1)
+    Call rateeq_met(xne, dvdr, vr, dilfac, clf, velo)
+!   print*,'test_point3',occng(83,2,50),occnglte(83,2,50)
+
+!   determine changes for all levels at all depth-points
+    If (calcerr) Call calc_changes
+!   JO changed Feb. 2017: update of below quantities only after
+!   prep_ng_met has been called
+!   occ1old2=occ1
+!   occngold2=occng
+    If (.Not. calcerr) calcerr = .True.
+!   occ1, occng and fjk (jatom_full) are explicitly overwritten
+!   hack
+!   print*,'metconv1 set to true'
+!   metconv1=.true.
+
+  End If
+! output of ionisation structure
+! new since V6.1:
+! since after restart METAL_IONS/METAL_IDL would be overwritten by first
+! LTE run, IONOUT now creates output in dependence of LTEOPT
+! ------------------------------
+  If (nout/=0) Call ionout(lteopt)
+
+  If (.Not. lines .Or. (lteopt .And. .Not. lines_in_model)) Return
+  If (nochange_in_metals) Return
+
+  Call neglect_ions
+  Call opacitl(xne, lteopt, ntemp, dvdr, vr, velo, clf, frenew)
+  optlines = .True.
+
+  Return
+End Subroutine
+
+!------------------------------------------------------------------------
+
+Subroutine version_nlte_app(ver_nlte_app1)
+
+  Use :: version_nlte_approx, Only: ver_nlte_app
+  Implicit None
+
+  Character (10) :: ver_nlte_app1
+
+  ver_nlte_app1 = ver_nlte_app
+
+End Subroutine
+
+!------------------------------------------------------------------------
+
+Subroutine update_occng(lteopt)
+
+! resets occngold2 and occ1old2 ouside subr. nlte_approx,
+! to ensure correct Ng-extrapolation cycle
+  Use :: nlte_app, Only: occ1, occng, occ1old2, occngold2
+  Implicit None
+  Logical, Intent (In) :: lteopt
+
+  If (lteopt) Then
+    Write (999, *) ' stop: lteopt = .true. in update_occng'
+    Stop ' lteopt = .true. in update_occng'
+  End If
+
+  occ1old2 = occ1
+  occngold2 = occng
+
+  Return
+End Subroutine
+
+!------------------------------------------------------------------------
+
+Subroutine ilowimax_nlte(ilownl, imaxnl, ilowlte, imaxlte, nd, ns)
+! called from nlte.f90
+! kept here because module nlte_app required
+
+! definition of ilownl and imaxnl for metals, using the info obtained
+! in nlte_approx
+! (for z=0, ILOWIMAX_OLD is used, whereas H/HE are always treated
+! in the old spirit, via ILOWIMAX_LTE
+
+! HERE YOU CAN PLAY AROUND IF NECESSARY!!!
+
+  Use :: nlte_type
+  Use :: nlte_dim
+  Use :: nlte_opt, Only: global
+  Use :: fastwind_params, Only: names => names1
+
+  Use :: princesa_var, Only: nat, labat, nions, zeff, le, li, ifirsl
+
+  Use :: nlte_var, Only: ionis, imia, imaa, imianl, imaanl, blevel, alevel, &
+    tlumat, tulmat
+
+  Use :: fastwind_params, Only: natom, nion
+
+  Use :: nlte_app, Only: jmax, indexel, fjk
+
+  Use :: nlte_xrays, Only: optxray
+
+  Implicit None
+
+! new parameter GLOBAL (from V6.1 on) set in nlte_opt
+! if set to .true., ILOWNL, IMAXNL will be constant throughout complete
+! atmosphere, &
+! controlled by the average in between NS-5 to NS+5
+! if set to .false., ILOWNL, IMAXNL will be locally consistent (but with
+! disadvantages regarding the CMF lines, see below
+
+! .. parameters ..
+  Integer (i4b), Parameter :: kel = id_atoms
+  Integer (i4b), Parameter :: nrec = id_llevs
+  Integer (i4b), Parameter :: nd1 = id_ndept
+! ..
+! .. scalar arguments ..
+  Integer (i4b) :: nd, ns
+! ..
+! .. array arguments ..
+  Integer (i4b) :: ilownl(nd1, kel), imaxnl(nd1, kel), ilowlte(nd1, kel), &
+    imaxlte(nd1, kel)
+
+  Integer (i4b) :: i, k, l, im, im1, im2, ixlow, ixmax, mean, ni, imi, ima, &
+    ioni, nato, inato, ij, nlas, igenio
+  Integer (i4b), Dimension (1) :: imax0, imax1, imax2
+
+  Real (dp), Dimension (nion) :: f
+
+  Real (dp) :: imean
+
+  Logical :: low, high
+
+  External :: igenio
+
+! residing now in fastwind_params, under NAMES1
+! DATA NAMES /'H ','HE','LI','BE','B ','C ', &
+! &          'N ','O ','F ','NE','NA','MG', &
+! &          'AL','SI','P ','S ','CL','AR',&
+! &          'K ','CA','SC','TI','V ','CR',&
+! &          'MN','FE','CO','NI','CU','ZN'/
+
+! remember: ilow = 1 refers to lowest ion in DETAIL
+! in fjk, on the other hand, we count from neutrals on
+
+  Do k = 3, natom !                 (not H/He)
+    i = indexel(k)
+    If (i>0) Then
+!     at first, perform consistency check
+      If (labat(i)/=names(k)) Then
+        Write (999, *) ' stop: explicit metals not found in NAMES'
+        Stop ' explicit metals not found in NAMES'
+      End If
+
+      Print *, ' ATOM: ', labat(i)
+      Do l = 1, nd
+
+        f = fjk(k, :, l)
+        f(jmax(k)+1:nion) = 0.
+        imax0 = maxloc(f)
+        im = imax0(1)
+        imax1 = maxloc(f, mask=f<f(im))
+        im1 = imax1(1)
+        imax2 = maxloc(f, mask=f<f(im1))
+        im2 = imax2(1)
+        ixlow = min0(im, im1, im2)
+        ixmax = max0(im, im1, im2)
+        If (ixlow==0) Then
+          Write (999, *) ' stop: IXLOW = 0'
+          Stop ' IXLOW = 0'
+        End If
+        If (ixmax>jmax(k)) Then
+          Write (999, *) ' stop: IXMAX > JMAX'
+          Stop ' IXMAX > JMAX'
+        End If
+        If (ixmax-ixlow/=2) Then
+          If (ixmax-ixlow>3) Then
+            Write (999, *) ' stop: SOMETHING REALLY WRONG WITH IXLOW, IXMAX'
+            Stop ' SOMETHING REALLY WRONG WITH IXLOW, IXMAX'
+          End If
+          im1 = ixmax
+          im2 = ixlow
+          If (f(im1)<f(im2)) Then
+            ixmax = ixmax - 1
+          Else
+            ixlow = ixlow + 1
+          End If
+          If (ixmax-ixlow/=2) Then
+            Print *, l
+            Print *, fjk(k, :, l)
+            Print *, ixlow, ixmax
+            Write (999, *) ' stop: PROBLEMS IXLOW, IXMAX COULD NOT BE CURED'
+            Stop ' PROBLEMS IXLOW, IXMAX COULD NOT BE CURED'
+          End If
+        End If
+        ilownl(l, i) = ixlow
+        imaxnl(l, i) = ixmax
+!       for tests
+!       PRINT*,L,I,IXLOW,IXMAX
+      End Do
+
+!     calculate average ionization in most decisive region, assumed here
+!     between NS-5 and NS+5  (with NS the transition point)
+!     MIGHT NEED TO BE MODIFIED. (FROM NS-10 TO NS+10)
+      If (ns+5<=0) Then
+        Write (999, *) ' stop: SOMETHING WRONG WITH TRANSITION POINT'
+        Stop ' SOMETHING WRONG WITH TRANSITION POINT'
+      End If
+
+      imean = 0.
+      Do l = ns - 5, ns + 5
+        imean = imean + (ilownl(l,i)+1.)
+      End Do
+      imean = imean/11.
+
+      Print *, ' AVERAGE IONIS. IN LINE-FORMING REGION (1 = neutral): ', imean
+
+!     consider effective charge (DETAIL!)
+!     HERE WAS A BRUTAL BUT. REMOVED FROM V7.2 ON
+      ilownl(:, i) = ilownl(:, i) - zeff(i)
+      imaxnl(:, i) = imaxnl(:, i) - zeff(i)
+
+      mean = nint(imean-zeff(i))
+
+      ni = nions(i) - 1 !           (WITHOUT K-LEVEL)
+      low = .False.
+      high = .False.
+
+      If (mean<1) Then
+        Write (999, *) ' WARNING!!!!!'
+        Write (999, *) ' WARNING!!!!!'
+        Write (999, *) ' WARNING!!!!!'
+        Write (999, *) ' WARNING!!!!! MEAN CHARGE (CORRECTED) < &
+          &1, INCLUDE LOWER IONISATION STAGES IN DETAIL-FILE'
+        Write (999, *) ' WARNING!!!!!'
+        Write (999, *) ' WARNING!!!!!'
+        Write (999, *) ' PROCEED AT OWN RISK!!!'
+        Print *, ' WARNING!!!!!'
+        Print *, ' WARNING!!!!!'
+        Print *, ' WARNING!!!!!'
+        Print *, ' WARNING!!!!! MEAN CHARGE (CORRECTED) < 1, INCLUDE &
+          &LOWER IONISATION STAGES IN DETAIL-FILE'
+        Print *, ' WARNING!!!!!'
+        Print *, ' WARNING!!!!!'
+        Print *, ' PROCEED AT OWN RISK!!!'
+        mean = mean + 1
+        low = .True.
+        If (mean<1) Then
+          Write (999, *) ' stop: STILL MEAN < 1, CANNOT PROCEED'
+          Stop ' STILL MEAN < 1, CANNOT PROCEED'
+        End If
+      End If
+
+      If (mean>ni) Then
+        Write (999, *) ' WARNING!!!!!'
+        Write (999, *) ' WARNING!!!!!'
+        Write (999, *) ' WARNING!!!!!'
+        Write (999, *) ' WARNING!!!!! MEAN (CHARGE CORRECTED > &
+          &NION, INCLUDE HIGHER IONISATION STAGES IN DETAIL-FILE'
+        Write (999, *) ' WARNING!!!!!'
+        Write (999, *) ' WARNING!!!!!'
+        Write (999, *) ' PROCEED AT OWN RISK!!!'
+        Print *, ' WARNING!!!!!'
+        Print *, ' WARNING!!!!!'
+        Print *, ' WARNING!!!!!'
+        Print *, ' WARNING!!!!! MEAN (CHARGE CORRECTED > NION, &
+          &INCLUDE HIGHER IONISATION STAGES IN DETAIL-FILE'
+        Print *, ' WARNING!!!!!'
+        Print *, ' WARNING!!!!!'
+        Print *, ' PROCEED AT OWN RISK!!!'
+        mean = mean - 1
+        high = .True.
+        If (mean>ni) Then
+          Write (999, *) ' stop: STILL MEAN < NION, CANNOT PROCEED'
+          Stop ' STILL MEAN < NION, CANNOT PROCEED'
+        End If
+      End If
+
+      If (low .And. high) Then
+        Write (999, *) ' stop: SOMETHING WRONG WITH LOW OR HIGH(1)'
+        Stop ' SOMETHING WRONG WITH LOW OR HIGH(1)'
+      End If
+
+!     IF YOU WANT TO HAVE LOCALLY CONSISTENT IONIZATION FRACTIONS
+!     (GLOBAL=.FALSE.)
+!     WARNING: BY DOING SO, BE AWARE THAT SOME CMF LINES WILL BE CACULATED IN
+!     SOBO
+      If (.Not. global) Go To 100
+
+!     IF THE NEXT LINES ARE EXECUTED (GLOBAL=.TRUE.), YOU WILL HAVE CONSTANT
+!     ILOW/IMAX FOR ALL DEPTH POINTS, WHICH CAN BE ADVANTAGEOUS W.R.T.
+!     CMF-TRANSFER
+      If (mean==1) Then
+        ilownl(:, i) = mean
+        If (ni==1) Then
+          imaxnl(:, i) = mean
+        Else If (ni==2 .Or. low) Then ! ONLY TWO STAGES, OTHERWISE NUMERICAL
+!         PROBLEMS
+          imaxnl(:, i) = mean + 1
+        Else
+          imaxnl(:, i) = mean + 2
+        End If
+
+      Else If (mean==ni) Then
+
+        imaxnl(:, i) = mean
+        If (ni==1) Then
+          ilownl(:, i) = mean
+        Else If (ni==2. .Or. high) Then ! ONLY TWO STAGES, OTHERWISE NUMERICAL
+!         PROBLEMS
+          ilownl(:, i) = mean - 1
+        Else
+          ilownl(:, i) = mean - 2
+        End If
+
+      Else
+        If (low .Or. high) Then
+          Write (999, *) ' stop: SOMETHING WRONG WITH LOW OR HIGH(2)'
+          Stop ' SOMETHING WRONG WITH LOW OR HIGH(2)'
+        End If
+        ilownl(:, i) = mean - 1
+        imaxnl(:, i) = mean + 1
+      End If
+
+
+      If (optxray) Then
+!       think about O and P
+!       IF (LABAT(I).EQ.'C' .AND. (IMAXNL(1,I)+ZEFF(I)).LT.5) THEN
+!       ILOWNL(:,I)=3-ZEFF(I)
+!       IMAXNL(:,I)=5-ZEFF(I)
+!       ENDIF
+        If (labat(i)=='N' .And. (imaxnl(1,i)+zeff(i))<5) Then
+          ilownl(:, i) = 3 - zeff(i)
+          imaxnl(:, i) = 5 - zeff(i)
+        End If
+        If (labat(i)=='O' .And. (imaxnl(1,i)+zeff(i))<6) Then
+          ilownl(:, i) = 4 - zeff(i)
+          imaxnl(:, i) = 6 - zeff(i)
+        End If
+        If (labat(i)=='P' .And. (imaxnl(1,i)+zeff(i))<5) Then
+          ilownl(:, i) = 3 - zeff(i)
+          imaxnl(:, i) = 5 - zeff(i)
+        End If
+      End If
+
+100   Continue
+
+      Do l = 1, nd !                IMAX (LTE) LOWER?
+        ioni = ionis(i, l)
+        imaxnl(l, i) = min(ioni, imaxnl(l,i))
+        If (imaxnl(l,i)-ilownl(l,i)<0) Then
+          Write (999, *) ' stop: IMAX TOO LOW (IONIS)!!!'
+          Stop ' IMAX TOO LOW (IONIS)!!!'
+        End If
+      End Do
+
+    End If
+  End Do
+
+! ------------ determination of imia, imaa (nlte)
+
+  Do k = 1, nat
+    If (labat(k)=='H' .Or. labat(k)=='HE') Then
+      ilownl(:, k) = ilowlte(:, k)
+      imaxnl(:, k) = imaxlte(:, k)
+      imianl(k) = imia(k)
+      imaanl(k) = imaa(k)
+      Cycle
+    End If
+
+    imi = nions(k)
+    ima = 0
+
+    Do l = 1, nd
+      imi = min0(ilownl(l,k), imi)
+!     COMMENTED (V6.1)
+!     IF(IMI.NE.ILOWNL(L,K)) STOP ' ERROR IN IMI PHILOSOPHY'
+      ima = max0(imaxnl(l,k), ima)
+    End Do
+
+    If (ima==0) Then
+      Write (999, *) ' stop: SOMETHING WRONG WITH IMA'
+      Stop ' SOMETHING WRONG WITH IMA'
+    End If
+    imianl(k) = imi
+    imaanl(k) = ima
+    If (imi<imia(k)) Then
+      Write (999, *) ' stop: IMI < IMI(LTE)'
+      Stop ' IMI < IMI(LTE)'
+    End If
+    If (ima>imaa(k)) Then
+      Write (999, *) ' stop: IMA < IMA(LTE)'
+      Stop ' IMA < IMA(LTE)'
+    End If
+
+!   IF (OPTOUT .AND. ICONVER.EQ.1)
+    Write (*, Fmt=110) k, imi, ima
+    Print *
+  End Do
+
+
+! check for new levels
+! FROM VER 6.1 ON, ONLY HERE (and in ILOWIMAX_LTE, but not in COPYOCC):
+! ILOW and IMAX can change. If they change to higher stages,
+! subroutine OPACITC has no info how to deal with this.
+! Example: in a certain iteration, ILOW=1, IMAX=3 at a certain L.
+! after ILOWIMAX_NLTE has been called (either due to restart, or because
+! of temperature update, ILOW/IMAX change to 2/4. Altough the occupation
+! numbers of the ground-level of i=4 is known, all other levels as well
+! as the bf-transition 4_1 to 5_1 remain unkown. THUS:
+
+
+  Do l = 1, nd
+
+    Read (17, Rec=l)(blevel(i), i=1, nrec)
+    Read (15, Rec=l)(alevel(i), i=1, nrec)
+
+    Do i = 1, nrec
+      nato = le(i)
+      inato = li(i)
+      ij = igenio(nato, imaxnl(l,nato)) + 1
+      nlas = ifirsl(ij)
+!     slightly modified from V6.1 on
+      If (blevel(i)==0. .And. ((inato>=ilownl(l,nato) .And. &
+        inato<=imaxnl(l,nato)) .Or. i==nlas)) Then
+!       VERY SMALL OCCUP. NUMBER
+        blevel(i) = alevel(i)*1.D-10
+        Print *, 'NEW LEVEL ', i, ' AT L = ', l, &
+          ': OCC MODIFIED TO OCC-LTE*1.D-10'
+!       print*,i,nato,inato,ilow(l,nato),imax(l,nato)
+!       stop
+      End If
+    End Do
+    Write (17, Rec=l)(blevel(i), i=1, nrec)
+  End Do
+
+! JO added July 2018 (v8.2.3); set to zero, after ionization has changed
+  tlumat = 0.D0
+  tulmat = 0.D0
+
+  Return
+
+110 Format (' ELEM. NO. ', I2, ' WITH ILOW= ', I1, ' AND IMAX= ', I1, &
+    ' (NLTE, ZEFF CORRECTED)')
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine abundan(yhe, xmet, teff)
+
+! ----------------------------------------------------------------------
+! determines abundances of the elements
+
+! all metals (without the prespecified ones, see below) are rescaled
+! to a fraction of xmet of
+! their corresponding solar MASS-fraction (xmet > 0)
+
+! or
+
+! their corresponding solar NUMBER-fractions (xmet < 0)
+
+! helium content is changed to yhe
+! prespecified metall abundances (with respect to H) are conserved!
+
+! solar abundances are from Anders & Grevesse
+! (1989, Geochim. Cosmochim. Acta 53)
+
+! with corrections from
+
+! Holweger, Heise and Kock, 1990, A&A 232, 510,
+! St"urenberg & Holweger,   1990, A&A 237, 125,
+! Holweger, Kock and Bard,  1995, A&A 296, 233)
+! N. Grevesse & A. Sauval,  1998, Space Science Reviews 85, 161
+
+
+! INPUT:
+! yhe   : specified Helium abundance (with respect to H)
+! xmet  : total metal abundance with respect to solar mass-fractions
+! prespecified abundanced for specific elements (with respect to H)
+
+! if OPTKUR is set to true during compilation, Kurucz abundances are
+! used (only for test calculations!)
+
+! OUTPUT:
+! abund(natom)  : abundances (with respect to all particles)
+! summas        : mean atomic weight (in m_H)
+! xhy  : hydrogen mass fraction
+! xhe  : helium         "
+
+
+! VERSION:
+! 1.0   03/02/2000 JP
+! 2.0   24/04/2001 JP
+! 3.0   02/05/2001 JP!
+! 4.0   end 2005
+
+! Note, that Dumpfbacke U.S. has confused the abundances from Anders &
+! Grevesse with the old ones by Holweger.
+! This has been corrected now in version 3.0.
+
+! from version 4.0 on, solar abundances are read from file
+
+! ----------------------------------------------------------------------
+  Use :: nlte_type
+  Use :: fund_const, Only: amh, akb
+  Use :: fastwind_params, Only: fpath, names1, ndebug, natom
+  Use :: nlte_var, Only: vturb, modnam, nat_bg, names_bg, abundbg, &
+    abund_have_changed
+  Use :: nlte_app, Only: nat, abund, abundin, labat, weight, summas, xhy, xhe, &
+    indexel, indexbg, vth, abund_h12
+  Use :: nlte_opt, Only: optkur
+
+  Implicit None
+  Real (dp), Intent (In) :: yhe, xmet, teff
+
+  Real (dp), Dimension (natom) :: solar, xsol, xmass, aweight, abkur, abundold
+
+  Integer (i4b) :: i, j, k, index, ios
+  Real (dp) :: rest, zsolar, zme, corr, sumabu, vth8
+
+  Character (6), Dimension (natom) :: names
+
+  Logical :: exist
+
+
+! atomic number Z and name
+! ---------------------------------------------
+! 1 H     2 He    3 Li    4 Be    5 B     6 C
+! 7 N     8 O     9 F    10 Ne   11 Na   12 Mg
+! 13 Al   14 Si   15 P    16 S    17 Cl   18 Ar
+! 19 K    20 Ca   21 Sc   22 Ti   23 V    24 Cr
+! 25 Mn   26 Fe   27 Co   28 Ni   29 Cu   30 Zn
+
+! for info and checks -> moved to nlte_app from v7.2.1
+! data names1 /'H ','HE','LI','BE','B ','C ', &
+! &          'N ','O ','F ','NE','NA','MG', &
+! &          'AL','SI','P ','S ','CL','AR',&
+! &          'K ','CA','SC','TI','V ','CR',&
+! &          'MN','FE','CO','NI','CU','ZN'/
+
+
+
+! standard set of SOLAR abundances used for background elements
+! (sources see above)
+
+! now read from file ATOMDAT_NEW/abundan_solar
+
+! if you don't like these numbers, change this file.
+! Take care since these numbers must be the SOLAR ones, used for
+! renormalization if xmet > 0!
+
+
+! DATA solar !old!     /12.000,10.930, 1.100, 1.400, 2.550, 8.520, &
+! Finally, we use 0.1 as standard Helium abundance
+! DATA solar      /12.000,11.000, 1.100, 1.400, 2.550, 8.520, &
+! 7.920, 8.830, 4.560, 8.080, 6.330, 7.580, &
+! 6.470, 7.550, 5.450, 7.330, 5.500, 6.400, &
+! 5.120, 6.360, 3.170, 5.020, 4.000, 5.670, &
+! 5.390, 7.500, 4.920, 6.250, 4.210, 4.600/
+
+! Kurucz abundances, normalized to ntot approx n_H + n_He
+  Data abkur/0.91100, 0.08900, -10.88, -10.89, -9.44, -3.48, -3.99, -3.11, &
+    -7.48, -3.95, -5.71, -4.46, -5.57, -4.49, -6.59, -4.83, -6.54, -5.48, &
+    -6.82, -5.68, -8.94, -7.05, -8.04, -6.37, -6.65, -4.37, -7.12, -5.79, &
+    -7.83, -7.44/
+
+
+  Data aweight/1.008, 4.003, 6.941, 9.012, 10.811, 12.011, 14.007, 16.000, &
+    18.998, 20.180, 22.990, 24.305, 26.982, 28.085, 30.974, 32.066, 35.453, &
+    39.948, 39.098, 40.078, 44.956, 47.88, 50.941, 51.996, 54.938, 55.847, &
+    58.933, 58.69, 63.546, 65.39/
+
+  Open (1, File=fpath//'abundan_solar', Status='old')
+  Do i = 1, natom
+    Read (1, *) j, names(i), solar(i)
+    If (names(i)/=names1(i)) Then
+      Write (999, *) ' stop: error in abundan_solar'
+      Stop ' error in abundan_solar'
+    End If
+  End Do
+  Close (1)
+
+  If (optkur) Then
+    Write (999, *) ' KURUCZ ABUNDANCES USED!!!'
+    Print *, ' KURUCZ ABUNDANCES USED!!!'
+  End If
+
+  Write (999, *)
+  Print *
+
+  If (ndebug>=2) Then
+    If (xmet>0.) Then
+      Write (999, *)
+      Write (999, *) ' YHE = ', yhe, ' XMET = ', xmet, &
+        ' SCALING TO SOLAR MASS-FRACTIONS'
+      Write (999, *)
+      Print *
+      Print *, ' YHE = ', yhe, ' XMET = ', xmet, &
+        ' SCALING TO SOLAR MASS-FRACTIONS'
+      Print *
+    Else
+      Write (999, *)
+      Write (999, *) ' YHE = ', yhe, ' XMET = ', abs(xmet), &
+        ' SCALING TO SOLAR NUMBER-FRACTIONS'
+      Write (999, *)
+      Print *
+      Print *, ' YHE = ', yhe, ' XMET = ', abs(xmet), &
+        ' SCALING TO SOLAR NUMBER-FRACTIONS'
+      Print *
+    End If
+    Write (999, *) ' PRESPECIFIED EXPLICIT ELEMENTS'
+    Print *, ' PRESPECIFIED EXPLICIT ELEMENTS'
+    Do k = 1, nat
+      Write (999, *) ' ELEMENT ', labat(k), ' WITH ABUNDANCE(TO H):', &
+        abundin(k)
+      Print *, ' ELEMENT ', labat(k), ' WITH ABUNDANCE(TO H):', abundin(k)
+    End Do
+    Write (999, *)
+    Print *
+  End If
+
+! hydrogen and helium a priori
+  indexel(1) = 0
+  indexel(2) = 0
+
+! find out which elements are prespecified
+  Do i = 1, natom
+    Do k = 1, nat
+      If (labat(k)==names(i)) Then
+        indexel(i) = k
+        If (i==1 .And. abundin(k)/=1.D0) Then
+          Write (999, *) ' stop: error in hydrogen-abundance'
+          Stop ' error in hydrogen-abundance'
+        End If
+      End If
+    End Do
+  End Do
+
+! prespecified background elements
+  If (nat_bg>0) Then
+    Write (999, *) ' PRESPECIFIED BACKGROUND ELEMENTS'
+    Print *, ' PRESPECIFIED BACKGROUND ELEMENTS'
+
+    Do k = 1, nat_bg
+      Do i = 1, natom
+        If (names_bg(k)==names(i)) Then
+          Write (999, *) ' ELEMENT ', names_bg(k), ' WITH ABUNDANCE(TO H):', &
+            abundbg(k)
+          Print *, ' ELEMENT ', names_bg(k), ' WITH ABUNDANCE(TO H):', &
+            abundbg(k)
+          indexbg(i) = k
+          Exit
+        End If
+      End Do
+      If (i==natom+1) Then
+        Print *, ' wrong element name:', names_bg(k)
+        Write (999, *) ' stop: wrong element name'
+        Stop ' wrong element name'
+      End If
+    End Do
+
+!   perform test (indexel and indexbg must be mutually exclusive)
+    Do i = 1, natom
+      If (indexel(i)>-1 .And. indexbg(i)>0) Then
+        Print *, 'element', i, ': indexel and indexbg inconsistent'
+        Write (999, *) ' stop: indexel and indexbg inconsistent'
+        Stop ' indexel and indexbg inconsistent'
+      End If
+    End Do
+
+  End If
+
+  If (xmet>0. .And. .Not. optkur) Then
+
+!   path for scaling to solar mass fraction
+
+!   solar values
+!   ------------
+
+    summas = 0.
+    rest = 0.
+
+    Do i = 1, natom
+      abund(i) = 10.**(solar(i)-solar(1)) ! now normalized to hydrogen
+      xsol(i) = abund(i)*aweight(i)
+      If (indexel(i)>-1 .Or. indexbg(i)>0) Then
+        summas = summas + xsol(i)
+      Else
+        rest = rest + xsol(i)
+      End If
+    End Do
+
+    summas = summas + rest
+    zsolar = rest/summas !          only for not prespecified metals
+
+!   redefine now solar values (if prespecified) and perform some checks
+!   Note that all prespecified input values (from DETAIL-ed file)
+!   have been already normalized to hydrogen.
+
+    Do i = 1, natom
+      k = indexel(i)
+      If (k>0) Then
+        If (abs(1.-weight(k)/aweight(i))>0.01) Then
+          Write (999, *) ' stop: error in atomic masses'
+          Stop ' error in atomic masses'
+        End If
+        abund(i) = abundin(k)
+      End If
+
+      k = indexbg(i)
+      If (k>0) Then
+        abund(i) = abundbg(k)
+      End If
+    End Do
+    abund(2) = yhe !                use always prespecified Helium abundance
+!   (from INDAT.DAT)
+
+!   Now rescaling to xmet
+
+
+!   At first, same game as above for actual values (which have been just
+!   created)
+    summas = 0.
+    rest = 0.
+
+    Do i = 1, natom
+      xmass(i) = abund(i)*aweight(i)
+      If (indexel(i)>-1 .Or. indexbg(i)>0) Then
+        summas = summas + xmass(i)
+      Else
+        rest = rest + xmass(i)
+      End If
+    End Do
+
+    zme = xmet*zsolar
+
+!   from approach:
+!   1.*w(1)+yhe*w(2)+sum(a(k)*w(k)(prespec)+corr*sum(a(k)*w(k))(solar) =
+!   summas+corr*rest
+
+!   and thus
+
+!   (corr*rest)/(summas+corr*rest) =: zme
+
+    corr = (summas*zme)/(rest*(1.-zme))
+
+!   renormalisation of rest metals
+renorm: Do i = 3, natom
+      If (indexel(i)>0 .Or. indexbg(i)>0) Cycle renorm ! don't touch
+!     prespecified values
+      abund(i) = abund(i)*corr
+    End Do renorm
+
+!   ----------------------------------------------------------------------
+
+  Else If (xmet<0. .And. .Not. optkur) Then
+
+!   path for scaling to number fractions
+
+!   solar values
+!   ------------
+
+
+    Do i = 1, natom
+      abund(i) = 10.**(solar(i)-solar(1)) ! now normalized to hydrogen
+    End Do
+
+
+!   scale with xmet (scaling of abundance normalized to H is identical
+!   to scaling of abundances normalized to ntot, as long as metals are
+!   concerned)
+
+renorm1: Do i = 3, natom
+      If (indexel(i)>0 .Or. indexbg(i)>0) Cycle renorm1 ! don't touch
+!     prespecified values
+      abund(i) = abund(i)*abs(xmet)
+    End Do renorm1
+
+
+!   redefine now solar values (if prespecified) and perform some checks
+!   Note that all prespecified input values (from DETAIL-ed file)
+!   have been already normalized to hydrogen.
+
+    Do i = 1, natom
+      k = indexel(i)
+      If (k>0) Then
+        If (abs(1.-weight(k)/aweight(i))>0.01) Then
+          Write (999, *) ' stop: error in atomic masses'
+          Stop ' error in atomic masses'
+        End If
+        abund(i) = abundin(k)
+      End If
+
+      k = indexbg(i)
+      If (k>0) Then
+        abund(i) = abundbg(k)
+      End If
+    End Do
+    abund(2) = yhe !                use always prespecified Helium abundance
+!   (from INDAT.DAT)
+
+  Else If (xmet<0. .And. optkur) Then
+
+
+!   path for scaling to number fractions, using Kurucz abundances
+
+!   solar values
+!   ------------
+
+
+    corr = 1.D0 + abkur(2)/abkur(1)
+    abund(1) = abund(1)*corr
+    abund(2) = abund(2)*corr
+    Do i = 3, natom
+      abund(i) = 10.**abkur(i)*corr ! now normalized to hydrogen
+    End Do
+
+
+!   scale with xmet (scaling of abundance normalized to H is identical
+!   to scaling of abundances normalized to ntot, as long as metals are
+!   concerned)
+
+renorm2: Do i = 3, natom
+      If (indexel(i)>0 .Or. indexbg(i)>0) Cycle renorm2 ! don't touch
+!     prespecified values
+      abund(i) = abund(i)*abs(xmet)
+    End Do renorm2
+
+
+!   redefine now solar values (if prespecified) and perform some checks
+!   Note that all prespecified input values (from DETAIL-ed file)
+!   have been already normalized to hydrogen.
+
+    Do i = 1, natom
+      k = indexel(i)
+      If (k>0) Then
+        If (abs(1.-weight(k)/aweight(i))>0.01) Then
+          Write (999, *) ' stop: error in atomic masses'
+          Stop ' error in atomic masses'
+        End If
+        abund(i) = abundin(k)
+      End If
+
+      k = indexbg(i)
+      If (k>0) Then
+        abund(i) = abundbg(k)
+      End If
+    End Do
+    abund(2) = yhe !                use always prespecified Helium abundance
+!   (from INDAT.DAT)
+
+  Else
+    Write (999, *) ' stop: wrong specification of abundances'
+    Stop ' wrong specification of abundances'
+
+  End If
+
+  index = 6*(natom/6.)
+! ----------------------------------------------------------------------
+! from v7.1 on
+
+! check whether ABUNDAN exists, and, in case, test whether old abundances
+! are the same as new abundances;
+! if no and restart, metal-background will be recalculated
+! (-> in restart, METALS-CONVERGED set to false
+  abund_have_changed = .False.
+
+  Inquire (File=trim(modnam)//'/ABUNDAN', Exist=exist)
+  If (exist) Then
+    Open (1, File=trim(modnam)//'/ABUNDAN', Status='old', Iostat=ios)
+    If (ios/=0) Then
+      Write (999, *) ' stop: ABUNDAN DOES NOT EXIST BUT SHOULD'
+      Stop ' ABUNDAN DOES NOT EXIST BUT SHOULD'
+    End If
+    Read (1, *)
+    Read (1, *)
+    Read (1, *)
+    Do i = 0, index - 6, 6
+      Read (1, 110)(k, abundold(j+i), j=1, 6)
+    End Do
+    Close (1)
+
+    Do i = 1, natom
+      If (abundold(i)==0.) Then
+        If (abund(i)==0.) Cycle
+        abund_have_changed = .True.
+        Exit
+      End If
+      If (abs(1.-abund(i)/abundold(i))>0.2) Then
+        abund_have_changed = .True.
+        Exit
+      End If
+    End Do
+
+    If (abund_have_changed) Then
+      Write (999, *)
+      Write (999, *) ' AT LEAST ONE ELEMENT WITH SIGNIF. DIFFERENT &
+        &ABUNDANCE THAN IN PREVIOUS MODEL'
+      Write (999, *)
+      Print *
+      Print *, ' AT LEAST ONE ELEMENT WITH SIGNIF. DIFFERENT ABUNDANCE &
+        &THAN IN PREVIOUS MODEL'
+      Print *
+      Do i = 1, natom
+        If (abundold(i)==0. .And. abund(i)/=0.) Then
+          Write (999, Fmt= &
+            '('' ELEMENT '',a3,'' old abund: '',e8.2,'' new abund: '',e8.2)') &
+            names(i), abundold(i), abund(i)
+          Write (*, Fmt= &
+            '('' ELEMENT '',a3,'' old abund: '',e8.2,'' new abund: '',e8.2)') &
+            names(i), abundold(i), abund(i)
+        Else If (abs(1.-abund(i)/abundold(i))>0.2) Then
+          Write (999, Fmt= &
+            '('' ELEMENT '',a3,'' old abund :'',e8.2,'' new abund :'',e8.2)') &
+            names(i), abundold(i), abund(i)
+          Write (*, Fmt= &
+            '('' ELEMENT '',a3,'' old abund :'',e8.2,'' new abund :'',e8.2)') &
+            names(i), abundold(i), abund(i)
+        End If
+      End Do
+    End If
+  End If
+
+! continue with first output (also written to file ABUNDAN)
+! ------
+  Open (1, File=trim(modnam)//'/ABUNDAN', Status='unknown')
+  Write (999, 100) &
+    ' NUMBER FRACTIONS OF THE ELEMENTS WITH RESPECT TO HYDROGEN'
+  Write (*, 100) ' NUMBER FRACTIONS OF THE ELEMENTS WITH RESPECT TO HYDROGEN'
+  Write (1, 100) ' NUMBER FRACTIONS OF THE ELEMENTS WITH RESPECT TO HYDROGEN'
+
+  Do i = 0, index - 6, 6
+    Write (999, 110)(j+i, abund(j+i), j=1, 6)
+    Write (*, 110)(j+i, abund(j+i), j=1, 6)
+    Write (1, 110)(j+i, abund(j+i), j=1, 6)
+  End Do
+
+  If (natom>6*index) Then
+    Write (999, 110)(j, abund(j), j=index+1, natom)
+    Write (*, 110)(j, abund(j), j=index+1, natom)
+    Write (1, 110)(j, abund(j), j=index+1, natom)
+  End If
+
+! save for Raymond-Smith code
+  abund_h12 = abund
+
+! now final mass fractions
+  summas = 0.
+
+  Do i = 1, natom
+    xmass(i) = abund(i)*aweight(i)
+    summas = summas + xmass(i)
+  End Do
+  xmass = xmass/summas
+
+  xhy = xmass(1)
+  xhe = xmass(2)
+
+! now number fractions (with respect to all particles)
+! --------------------
+  sumabu = 0.
+
+  Do i = 1, natom
+    sumabu = sumabu + abund(i)
+  End Do
+
+! normalization
+  summas = 0. !                     mean atomic weight of mixture,
+! sum(nk*mk)/sum(nk)
+  Do i = 1, natom
+    abund(i) = abund(i)/sumabu !    ni/sum(nk)
+    summas = summas + abund(i)*aweight(i)
+  End Do
+
+  Write (999, 100) ' NUMBER FRACTIONS OF THE ELEMENTS'
+  Write (*, 100) ' NUMBER FRACTIONS OF THE ELEMENTS'
+  Write (1, 100) ' NUMBER FRACTIONS OF THE ELEMENTS'
+  index = 6*(natom/6.)
+
+  Do i = 0, index - 6, 6
+    Write (999, 110)(j+i, abund(j+i), j=1, 6)
+    Write (*, 110)(j+i, abund(j+i), j=1, 6)
+    Write (1, 110)(j+i, abund(j+i), j=1, 6)
+  End Do
+
+  If (natom>6*index) Then
+    Write (999, 110)(j, abund(j), j=index+1, natom)
+    Write (*, 110)(j, abund(j), j=index+1, natom)
+    Write (1, 110)(j, abund(j), j=index+1, natom)
+  End If
+
+  Write (999, 130) ' MASS FRACTION BY CLASS: H, He, Me', xmass(1), xmass(2), &
+    1. - xmass(1) - xmass(2)
+  Write (*, 130) ' MASS FRACTION BY CLASS: H, He, Me', xmass(1), xmass(2), &
+    1. - xmass(1) - xmass(2)
+  Write (1, 130) ' MASS FRACTION BY CLASS: H, He, Me', xmass(1), xmass(2), &
+    1. - xmass(1) - xmass(2)
+
+  Write (999, 100) ' MASS FRACTIONS OF THE ELEMENTS'
+  Write (*, 100) ' MASS FRACTIONS OF THE ELEMENTS'
+  Write (1, 100) ' MASS FRACTIONS OF THE ELEMENTS'
+  index = 6*(natom/6.)
+
+  Do i = 0, index - 6, 6
+    Write (999, 110)(j+i, xmass(j+i), j=1, 6)
+    Write (*, 110)(j+i, xmass(j+i), j=1, 6)
+    Write (1, 110)(j+i, xmass(j+i), j=1, 6)
+  End Do
+
+  If (natom>6*index) Then
+    Write (999, 110)(j, xmass(j), j=index+1, natom)
+    Write (*, 110)(j, xmass(j), j=index+1, natom)
+    Write (1, 110)(j, xmass(j), j=index+1, natom)
+  End If
+
+  Write (999, 120) ' MEAN ATOMIC MASS OF MIXTURE: ', summas
+  Write (*, 120) ' MEAN ATOMIC MASS OF MIXTURE: ', summas
+  Write (1, 120) ' MEAN ATOMIC MASS OF MIXTURE: ', summas
+
+! vthermal at teff
+! JO June 2023: vth(8) already calculated in START.
+! check for consistency
+  vth8 = vth(8)
+  Do i = 1, natom
+    vth(i) = sqrt(2.*akb*teff/(amh*aweight(i))+vturb*vturb)
+  End Do
+  If (vth(8)/=vth8) Then
+    Write (999, *) ' stop: inconsistent values for vth(8)'
+    Stop ' inconsistent values for vth(8)'
+  End If
+
+  Close (1)
+
+  Return
+
+100 Format (/, A, /)
+110 Format (1X, 10(I4,1X,E8.2))
+120 Format (/, A, 2X, F5.3)
+130 Format (/, A, 3(2X,G10.3))
+
+End Subroutine
+
+!----------------------------------------------------------------------
+
+Subroutine atomdat
+! ----------------------------------------------------------------------
+! reads all required atomic data for calculation of
+! ionisation structure, occupation numbers and opacities
+
+! INPUT :
+! 'generalinfo' : general counting information
+! 'partit'      : statist. weight of ground state of
+! (J_max+1) ionisation state
+! 'atomnl2_meta_v2.0': level information, generated by 'meta.f'
+! includes info concerning upper levels of bf transitions
+! 'atomcol'     : collision data
+! 'atomgf3'     : line data
+! 'atomnldr'    : dielectronic data
+
+! CALLED BY:
+! nlte_approx
+
+! CHANGES:
+! 10/91 zeta-values calculated (contributions from considered
+! levels only)
+! 02/00 to f90 and consistency with nlte
+
+! 02/01 eta recalculated to be consistent
+
+! 10/02 new definition of zeta
+
+! 04/06 ionization to excited levels enabled
+! 07/09 inclusion of dielectronic recomb.
+! ----------------------------------------------------------------------
+
+! crodat=alpha_i *g_i *nu_i^2/(alpha_1*g_1*nu_1^2)
+
+  Use :: nlte_type
+  Use :: fastwind_params, Only: fpath1, gfcut_allowed, natom, nion, nrec
+
+  Use :: nlte_app, Only: jatom, jmax, kel, iel, ielev, ibfup, ilow, ipop, &
+    indrec, abund, xion, zeta, crodat, gstat, ergion, metall, alpha, beta, s, &
+    trans, gfval, ilin, icol, irbb, icbb, met_rbb, met_cbb, levdr, ldadr, &
+    met_rdr, irdr, highest_level
+
+  Use :: nlte_opt, Only: optdr
+
+  Use :: princesa_var, Only: nat, labat
+
+  Implicit None
+  Integer (i4b) :: i, idum, ios, irec, j, jdum, k, lev, level, n, jj, kk
+  Integer (i4b) :: eastat1, eastat2, nr, lines, ind, npart, nrest, low, lup, &
+    nc, nrbb, ncbb, nrdr, ndr, levdr1, ldadr1, ilowdr, icompdr
+  Real (dp) :: recsum, wave, gf, slope, omega, ener, flu
+! Character (1) :: met
+
+  Print*,' path to atomic data base (bg elements) = ',fpath1
+  Write(999,*) ' path to atomic data base (bg elements) = ',fpath1
+
+  Open (211, File=fpath1//'generalinfo', Status='old', Err=170, Iostat=ios)
+  Open (212, File=fpath1//'partit', Status='old', Err=180, Iostat=ios)
+
+  eastat1 = 0
+  eastat2 = 0
+  nrbb = 0
+  ncbb = 0
+  nrdr = 0
+
+! read in general information
+! ---------------------------
+
+  Do i = 1, nrec
+    Read (211, *) irec, kel(i), iel(i), idum, idum, idum, ilin(i), levdr(i), &
+      ldadr(i), ielev(i)
+    indrec(kel(i), iel(i)) = irec
+  End Do
+
+! read maximum ionisation stage J_k and U(J_k+1)
+! ----------------------------------------------
+
+  Read (212, *)(jmax(i), i=1, natom)
+  Read (212, *)(gstat(i,jmax(i)+1,1), i=1, natom)
+
+  Close (211)
+  Close (212)
+
+  If (maxval(jmax)+1>nion) Then
+    Write (999, *) ' stop: error in nion'
+    Stop ' error in nion'
+  End If
+
+  Open (211, File=fpath1//'atomgf3', Status='old', Err=200, Iostat=ios)
+  Open (212, File=fpath1//'atomcol', Status='old', Err=210, Iostat=ios)
+  Open (213, File=fpath1//'atomnl2_meta_v2.0', Status='old', Err=190, &
+    Iostat=ios)
+  If (optdr) Open (214, File=fpath1//'atomnldr', Status='old', Err=220, &
+    Iostat=ios)
+
+
+! read level information
+! ----------------------
+
+
+  Do i = 1, nrec
+    k = kel(i)
+    j = iel(i)
+    Read (213, *) n, idum, idum, level, xion(k, j)
+
+    If ((n/=i) .Or. (level/=ielev(i))) Then
+      Write (*, *) 'error reading atomnl2_meta in subr. atomdat', n, level, i, &
+        ielev(i)
+      Write (999, *) 'error reading atomnl2_meta in subr. atomdat', n, level, &
+        i, ielev(i)
+      Stop
+    End If
+
+    recsum = 0.
+
+    Do lev = 1, level
+      Read (213, *) jdum, ibfup(k, j, lev), ilow(k, j, lev), &
+        ergion(k, j, lev), gstat(k, j, lev), metall(k, j, lev), &
+        ipop(k, j, lev), trans(k, j, lev), gfval(k, j, lev), alpha(i, lev), &
+        crodat(i, lev), beta(i, lev), s(i, lev)
+!     for highest ion, ibfup MUST be 1
+
+!     to create ionization-energy file
+!     met=metall(k,j,lev)
+!     if (met .eq. ' ') then
+!     if (lev .eq. 1) then
+!     met='g'
+!     else
+!     met='o'
+!     endif
+!     endif
+!     if(lev.le.5)  print*, &
+!     &       name(k),' ',j,' ',lev,' ',met,'
+!     ',1.d8/(xion(k,j)-ergion(k,j,lev))
+
+      If (j==jmax(k)) Then
+        If (ibfup(k,j,lev)/=1) Then
+!         print*,' upper level (bf) reset to ground-state: ',k,' ',j,' ',lev
+          ibfup(k, j, lev) = 1
+        End If
+      End If
+
+!     used in SR partit (only for ground-state transitions and ipop ne 0
+!     cases)
+      If ((metall(k,j,lev)=='s' .And. ilow(k,j,lev)==1) .Or. (ipop(k,j, &
+        lev)/=0)) recsum = recsum + crodat(i, lev)
+    End Do
+    If (crodat(i,1)/=1.) Then
+      Write (999, *) ' stop: error in crodat(ground)'
+      Stop ' error in crodat(ground)'
+    End If
+    zeta(k, j) = 1.D0/(recsum+1.D0)
+
+
+!   read level transition information from file 'atomgf3'
+    If (eastat1==0) Then
+      Read (211, *, End=100) nr, lines
+      Go To 110
+
+100   eastat1 = 1
+      Go To 120
+
+110   If (nr/=i) Then
+!       for missing transition information, do nothing
+!       (currently element 23I ... 23III)
+        If (ilin(i)/=0) Then
+          Write (999, *) ' stop: error in ilin'
+          Stop 'error in ilin'
+        End If
+        Backspace (211)
+      Else
+        If (lines/=ilin(i)) Then
+          Write (*, *) 'error in atomgf3:', nr, lines, ilin(nr)
+          Write (999, *) 'error in atomgf3:', nr, lines, ilin(nr)
+          Stop
+        End If
+
+        irbb(i) = nrbb + 1
+
+        Do jj = 1, ilin(nr)
+          Read (211, *) ind, wave, gf
+          nrbb = nrbb + 1
+          If (nrbb>35000) Then
+            Write (999, *) ' stop: nrbb > 35000!'
+            Stop ' nrbb > 35000!'
+          End If
+          npart = ind/10000
+          nrest = ind - npart*10000
+          low = nrest/100
+          lup = nrest - 100*low
+          met_rbb(nrbb)%low = low
+          met_rbb(nrbb)%lup = lup
+          met_rbb(nrbb)%wave = wave
+          met_rbb(nrbb)%gf = gf
+          met_rbb(nrbb)%index = 0
+!         highest level connected to a specific level via allowed transition
+!         algorithm assumes that transitions ordered!
+!         print*,nrbb,ind,low,lup,gf
+          If (gf>=gfcut_allowed) highest_level(i, low) = lup
+        End Do
+      End If
+120   Continue
+    End If
+
+!   read level transition information from file 'atomcol'
+    If (eastat2==0) Then
+      Read (212, *, End=130) nc, icol(i)
+      Go To 140
+130   eastat2 = 1
+      Go To 150
+
+140   If (nc/=i) Then
+        icol(i) = 0
+        Backspace (212)
+      Else
+        icbb(i) = ncbb + 1
+        Do jj = 1, icol(i)
+          ncbb = ncbb + 1
+          If (ncbb>1500) Then
+            Write (999, *) ' stop: ncbb > 1500!'
+            Stop ' ncbb > 1500!'
+          End If
+          Read (212, *) low, lup, slope, omega
+!         if(i.eq.18 .and. low.ne.1 .and. lup.ne.2) stop 'error in cbb'
+!         if(i.eq.18) then
+!         omega=1.d12
+!         slope=0.0001
+!         endif
+          met_cbb(ncbb)%low = low
+          met_cbb(ncbb)%lup = lup
+          met_cbb(ncbb)%omega = omega
+          met_cbb(ncbb)%slope = slope
+        End Do
+      End If
+150   Continue
+    End If
+
+!   DR data
+    If (.Not. optdr) Cycle
+!   read level transition information from file 'atomnldr'
+!   read(214,*,end=300) ndr, levdr1, ldadr1
+!   for gfortran
+    Read (214, *, End=160, Err=160) ndr, levdr1, ldadr1
+
+    If (ndr/=i) Then
+      irdr(i) = 0
+      Backspace (214)
+    Else
+      If (levdr1/=levdr(i) .Or. ldadr1/=ldadr(i)) Then
+        Write (999, *) ' stop: error in DR-data - levdr or ldadr'
+        Stop ' error in DR-data - levdr or ldadr'
+      End If
+      irdr(i) = nrdr + 1
+      Do kk = 1, levdr1
+        Read (214, *) ilowdr, icompdr
+        Do jj = 1, icompdr
+          nrdr = nrdr + 1
+          If (nrdr>3500) Then
+            Write (999, *) ' stop: nrdr > 3500!'
+            Stop ' nrdr > 3500!'
+          End If
+          Read (214, *) ener, flu
+          met_rdr(nrdr)%low = ilowdr
+          met_rdr(nrdr)%ncomp = icompdr
+          met_rdr(nrdr)%index = 0
+          met_rdr(nrdr)%ener = ener
+          met_rdr(nrdr)%flu = flu
+        End Do
+      End Do
+    End If
+
+160 Continue
+
+  End Do
+
+! testing DR-data (this is the way to read it)
+! do i=1,nrec
+! if(levdr(i).eq.0) cycle
+! if(irdr(i).eq.0) stop
+! ndr=irdr(i)
+! do kk=1,levdr(i)
+! icompdr=met_rdr(ndr)%ncomp
+! do jj=1,icompdr
+! print*,i,met_rdr(ndr)%low,met_rdr(ndr)%ener,met_rdr(ndr)%flu
+! ndr=ndr+1
+! enddo
+! print*
+! enddo
+! enddo
+
+! list of considered atom species
+  Do i = 1, nrec
+
+!   for tests
+!   print*,i,ilin(i),icol(i),irbb(i),icbb(i)
+!   jj=irbb(i)
+!   if(ilin(i).ne.0) &
+!   &   print*,met_rbb(jj)%low,met_rbb(jj)%lup,met_rbb(jj)%wave,met_rbb(jj)%gf
+!   jj=icbb(i)
+!   if(icol(i).ne.0) &
+!   &
+!   print*,met_cbb(jj)%low,met_cbb(jj)%lup,met_cbb(jj)%omega,met_cbb(jj)%slope
+
+    k = kel(i)
+    If (abund(k)/=0.) jatom(k) = k
+  End Do
+
+  If (nat==1) Then
+!   check whether NLTE atom is hydrogen
+    If (labat(1)/='H ') Then
+      Write (999, *) ' stop: nat = 1 and element ne hydrogen'
+      Stop ' nat = 1 and element ne hydrogen'
+    End If
+!   to forbid approx. treatment of helium, uncomment following line
+!   jatom(2) = 0
+  End If
+! for tests
+! jatom(8)=0
+
+
+  Close (211)
+  Close (212)
+  Close (213)
+  If (optdr) Close (214)
+
+! for tests
+! do i=1,nrec
+! do j=1,ielev(i)
+! print*,kel(i),iel(i),j,highest_level(i,j)
+! enddo
+! enddo
+
+  Return
+
+170 Write (999, *) ' error with generalinfo, iostat=', ios
+  Write (*, *) ' error with generalinfo, iostat=', ios
+  Write (999, *) ' most likely, directory for background element data missing!'
+  Write (999, *) ' check parameter fpath1!'
+  Write (*, *) ' most likely, directory for background element data missing!'
+  Write (*, *) ' check parameter fpath1!'
+  Stop
+180 Write (999, *) ' error with partit, iostat=', ios
+  Write (*, *) ' error with partit, iostat=', ios
+  Stop
+190 Write (999, *) ' error with atomnl2_meta, iostat=', ios
+  Write (*, *) ' error with atomnl2_meta, iostat=', ios
+  Stop
+200 Write (999, *) ' error with atomgf3, iostat=', ios
+  Write (*, *) ' error with atomgf3, iostat=', ios
+  Stop
+210 Write (999, *) ' error with atomcol, iostat=', ios
+  Write (*, *) ' error with atomcol, iostat=', ios
+  Stop
+220 Write (999, *) ' error with atomnldr, iostat=', ios
+  Write (*, *) ' error with atomnldr, iostat=', ios
+  Stop
+End Subroutine
+
+!----------------------------------------------------------------------
+
+Subroutine ionis(lteopt, ntemp, xne, dvdr, vr, clf)
+
+! ----------------------------------------------------------------------
+! calculation of ionisation stratification in wind
+! NOTE:
+! in case of xrays, we have tested (in indexfre) that all required
+! entries in indexfrec are ne 0, avoiding the approx. Trad = Teff
+! (in other words, the freq. grid extends to high enough frequencies)
+
+! WRITTEN:
+! 03/96, U.S.
+
+! CHANGES:
+! 06/96  J split into components J_i = W_i B(T_i)
+! for photoionization integrals
+! 10/96  different J for ground and excited levels
+! 01/97  SIMPLIFIED version for force multiplier calculation!
+! 02/00 to f90 and consistency with nlte, JP
+
+! 10/02  completetly changed; note that ZETA different from previous
+! definition
+
+! july/03 update for clumping: only line-transitions are affected, &
+! since ne already corrected
+
+! version 6.0: old approach preserved, see comment in routine partit
+! ----------------------------------------------------------------------
+  Use :: nlte_type
+  Use :: fund_const, Only: c2 => hkl, saha, const => const_cross, c_vanreg
+  Use :: fastwind_params, Only: natom, nion
+
+  Use :: nlte_var, Only: tradj1, xj, xxk
+  Use :: nlte_app, Only: nwne, indexfrec, jatom, jmax, lwion, xion, zeta, &
+    upart, fjk, teff, te, wion, summas, abund, xmuee, taus1, taus1new, &
+    deltatradj, coll_therm, indrec, ielev, indexex, ergion, metall, zcorr, &
+    ilow, trans, occng, gfval, corr_beta, c_n
+
+  Use :: nlte_porvor, Only: fic, tcl_fac_line
+
+  Implicit None
+
+  Integer (i4b), Intent (In) :: ntemp
+  Logical, Intent (In) :: lteopt
+  Real (dp), Dimension (nwne), Intent (In) :: xne, dvdr, vr, clf
+
+  Real (dp) :: tcl
+
+  Real (dp), Dimension (0:nion) :: psi, prod
+
+  Integer (i4b) :: j, js, k, l, it, n, ilev, lev, ind, il
+  Real (dp) :: ci, trad1, taus, ratlog, summ, uratio, xnk, eps, epskj, beta, &
+    vanreg, tau, tau_mult, lam, eddf
+
+  Real (dp) :: el, add1, add2
+  Character (1) :: met
+
+  Real (dp), Dimension (natom, nion) :: lambdares
+
+  ci = 0.5*saha
+
+  lambdares = 0.
+
+  eps = 1.
+  it = 0
+
+ittau: Do While (eps>1.D-3 .And. it<=20)
+
+    it = it + 1
+
+!   1. calculation of partition functions
+!   -------------------------------------
+
+    Call partit(lteopt, ntemp)
+
+
+!   2. calculation of f_jk = N_jk/N_k
+!   ---------------------------------
+radius: Do js = ntemp, nwne
+
+!     psi(j) := log (N_j+1/N_j)
+
+atom: Do k = 1, natom
+        If (jatom(k)==0) Cycle atom
+
+        Do j = 1, jmax(k)
+          If (lteopt .Or. js>=lwion) Then
+            trad1 = te(js)
+          Else
+            If (indexfrec(k,j)==0) Then
+!             wien tail, Bnue(trad) approx W Bnue(Teff) => &
+!             1/trad=1/teff -k ln W/(h nue)
+              trad1 = 1./teff - log(wion(js))/(c2*xion(k,j))
+              trad1 = 1./trad1
+            Else
+              trad1 = tradj1(js, indexfrec(k,j))
+            End If
+          End If
+          uratio = upart(k, j+1, js)/upart(k, j, js)
+
+!         OLD VERSION: J is locally approximated by W_ion*B(T_ion)
+
+!         ratlog = log(wne(js)) + .5*log(te(js)/trad1) + 1.5*log(trad1) &
+!         &        - log(ci) - c2*xion(k,j)/trad1
+
+
+!         NEW VERSION: J is locally approximated by B(T_RAD): improves
+!         convergence
+
+          ratlog = -log(xne(js)) + .5*log(te(js)/trad1) + 1.5*log(trad1) - &
+            log(ci) - c2*xion(k, j)/trad1
+
+!         note that zcorr = 1 for wion = 1 (allows for thermalization!) if
+!         all rad. temperatures are equal
+
+          If (lteopt .Or. js>=lwion) Then
+            zcorr(k, j, js) = 1.
+!           From V7 on: deltatradj might be different from 1 if lwion changes
+!           after
+!           update of phot. struct. and optlte = .true.
+!           Changed that always unity under LTE conditions
+            deltatradj(k, j, js) = 1.
+          Else
+
+!           correction to allow for different rad-temp in ionizing continua
+!           and  res. lines
+!           performed only for NOT prespecified elements; all quantities have
+!           been calculated in
+!           subroutine partit
+            n = indrec(k, j)
+            ilev = ielev(n)
+            Do lev = 2, ilev
+              met = metall(k, j, lev)
+              If (js==ntemp) Then
+                If (met=='s' .And. lambdares(k,j)==0.) Then
+                  el = ergion(k, j, lev) - ergion(k, j, ilow(k,j,lev))
+!                 consistency
+                  If (abs(el-trans(k,j,lev))>el*1.D-5) Then
+                    Write (999, *) ' stop: el ne trans'
+                    Stop ' el ne trans'
+                  End If
+!                 wavelength of 1st res. line
+                  lambdares(k, j) = 1.D8/el
+                  Cycle
+                End If
+              End If
+            End Do
+
+            zcorr(k, j, js) = zeta(k, j)*(1.D0+c_n(k,j,js))
+            taus = taus1(k, j, js)
+!           if (k.eq.7) &
+!           &        print*,j,js,zcorr(k,j,js),zeta(k,j),c_n(k,j,js),taus
+
+          End If
+
+!         for deltatradj, see note from above
+          psi(j) = log(uratio) + log(zcorr(k,j,js)*deltatradj(k,j,js)) + &
+            ratlog
+!         if(k.eq.7) print*,j,psi(j),log(uratio), &
+!         &        log(zcorr(k,j,js)*deltatradj(k,j,js)),ratlog
+          prod(j) = 0.
+        End Do !                    j
+
+        summ = 0.
+        psi(0) = 0.
+        prod(0) = 0.
+
+        Do j = 0, jmax(k)
+          Do l = 0, j
+            prod(j) = prod(j) + psi(l)
+          End Do
+          summ = summ + exp(prod(j))
+        End Do
+
+        Do j = 1, jmax(k) + 1
+          fjk(k, j, js) = exp(prod(j-1))/summ
+!         if(k.eq.7) print*,j,js,upart(k,j,js),fjk(k,j,js)
+        End Do
+
+      End Do atom
+
+    End Do radius
+
+    If (lteopt) Exit ittau
+
+!   check for taus1
+
+    eps = 0.
+
+atom1: Do k = 1, natom
+      If (jatom(k)==0) Cycle atom1
+
+      xnk = const*abund(k)/summas
+
+ions: Do j = 1, jmax(k)
+
+!       this quantity is affected by clumping, since all quantities
+!       calculated inside clumps (xmuee, xne), whereas taus involves spatial
+!       average
+        taus1new(k, j, 1:lwion-1) = xnk*xmuee(1:lwion-1)*xne(1:lwion-1)* &
+          fjk(k, j, 1:lwion-1)/(dvdr(1:lwion-1)*clf(1:lwion-1)) ! corrected
+
+        epskj = maxval(abs(1.-taus1new(k,j,1:lwion-1)/taus1(k,j,1:lwion-1)))
+        eps = max(eps, epskj)
+      End Do ions !                 ion loop
+    End Do atom1 !                  atom loop
+
+    taus1 = taus1new
+
+  End Do ittau
+
+  If (it==21) Then
+
+    Write (999, *)
+    Write (999, *) ' WARNING: TAUSOB ITERATION FOR METALS NOT CONVERGED!!!'
+    Write (999, *)
+    Print *
+    Print *, ' WARNING: TAUSOB ITERATION FOR METALS NOT CONVERGED!!!'
+    Print *
+
+  End If
+
+! perform consistency checks (can be skipped after couple of tests)
+
+  Go To 100
+  Do js = 1, lwion - 1
+    Do k = 1, natom
+      If (jatom(k)==0) Cycle
+      Do j = 1, jmax(k)
+        n = indrec(k, j)
+        ilev = ielev(n)
+        Do lev = 2, ilev
+          met = metall(k, j, lev)
+          If (met=='s' .Or. met=='m') Then
+            If (occng(n,lev,js)==0.) Then
+              Write (999, *) ' stop: IONIS: gs/s/m level and occng=0'
+              Stop 'IONIS: gs/s/m level and occng=0'
+            End If
+          Else
+            If (occng(n,lev,js)/=0.) Then
+              Write (999, *) ' stop: IONIS: other level and occng ne 0'
+              Stop ' IONIS: other level and occng ne 0'
+            End If
+          End If
+        End Do
+      End Do
+    End Do
+  End Do
+
+  Do js = lwion, nwne
+    Do k = 1, natom
+      If (jatom(k)==0) Cycle
+      Do j = 1, jmax(k)
+        n = indrec(k, j)
+        ilev = ielev(n)
+        Do lev = 2, ilev
+          If (occng(n,lev,js)==0.) Then
+            Write (999, *) ' stop: IONIS occng=0'
+            Stop ' IONIS occng=0'
+          End If
+        End Do
+      End Do
+    End Do
+  End Do
+
+100 Continue
+
+! calculate van Regemorter eps and coll_therm for next iteration
+
+  If (.Not. lteopt) Then
+    coll_therm = 0.
+    corr_beta = 1.
+
+    Do js = 1, lwion - 1
+atom3: Do k = 1, natom
+        If (jatom(k)==0) Cycle atom3
+        Do j = 1, jmax(k)
+
+!         lambdares=0: only metastable levels considered, do not require
+!         coll_therm
+
+          If (taus1(k,j,js)>1.D0 .And. lambdares(k,j)/=0.) Then
+            n = indrec(k, j)
+            ilev = ielev(n)
+
+            Do lev = 2, ilev
+              If (metall(k,j,lev)/='s') Cycle
+              lam = 1.D8/trans(k, j, lev)
+!             occup and gstat from lower level!
+              il = ilow(k, j, lev)
+!             gstat(k,j,1)*fval =gfval(k,j,lev)
+              If (il==1) Then
+                tau_mult = gfval(k, j, lev)*lam/1000./upart(k, j, js)
+              Else
+!               gstat(k,j,il)*fval =gfval(k,j,lev)
+                If (metall(k,j,il)/='m') Then
+                  Write (999, *) ' stop: inconsistency in lower level'
+                  Stop ' inconsistency in lower level'
+                End If
+                If (occng(n,il,js)==0.) Then
+                  Write (999, *) ' stop: occup = 0 for lower level'
+                  Stop ' occup = 0 for lower level'
+                End If
+                tau_mult = gfval(k, j, lev)*lam/1000.*occng(n, il, js)/ &
+                  upart(k, j, js)
+              End If
+
+!             ---- so far, the possibility of choosing the continuum opacity
+!             reduction
+!             NOT included here (would require additional loop etc.)
+!             since taus1 is propto Sobo depth with v-grad in actual units:
+!             --> tcl = taus1 * tau_mult * dvdr * tcl_fac_line
+!             (since tcl_fac_line includes already sr/vmax/dvdr = 1/dvdr in
+!             actual units)
+              tcl = taus1(k, j, js)*tau_mult*dvdr(js)*tcl_fac_line(js)
+!             no additional correction for micro-clumping required, since
+!             taus1
+!             already corrected
+
+              tau = taus1(k, j, js)*tau_mult*(1.+fic(js)*tcl)/(1.+tcl)
+
+              add1 = (3.*tau)/(1.+2.*vr(js)/dvdr(js)) ! at mue^2=1/3
+              If (add1<1.D-5) Then
+                beta = 1.D0
+              Else
+                beta = (1.-exp(-add1))/add1
+              End If
+
+!             assumption: collisions inside clumps, thus no correction
+!             (beta depends on non-local quantities anyway)
+
+              vanreg = (1.-exp(-1.4388D8/(lam*te(js))))*c_vanreg*lam**3* &
+                xne(js)/sqrt(te(js))
+              coll_therm(n, lev, js) = vanreg/(vanreg+beta)
+
+              ind = indexex(n, lev)
+              If (ind/=0) Then
+                eddf = xxk(js, ind)/xj(js, ind)
+                If (eddf>1.1 .Or. eddf<0.1) Then
+                  Write (999, *) lam, ind, js, eddf
+                  Print *, lam, ind, js, eddf
+                  Stop 'error in eddf'
+                End If
+                add2 = tau/(eddf+(1.-eddf)*vr(js)/dvdr(js)) ! at mue^2 = eddf
+                If (add2<1.D-5) Then
+                  add2 = 1.D0
+                Else
+                  add2 = (1.-exp(-add2))/add2
+                End If
+!               print*,k,j,lev,js,ind,lam,xxk(js,ind),xj(js,ind),eddf,add2,beta
+!               print*,k,j,lev,js,ind,lam,taus1(k,j,js),tau,tau_mult,gfval(k,j,lev)
+                corr_beta(n, lev, js) = min(add2/beta, 1.D0)
+              End If
+!             print*,js,k,j,lev,coll_therm(n,lev,js),beta,eddf,corr_beta(n,lev,js)
+            End Do
+          End If
+        End Do
+      End Do atom3
+    End Do
+  End If
+
+End Subroutine
+
+!----------------------------------------------------------------------
+
+Subroutine partit(lteopt, ntemp)
+! ----------------------------------------------------------------------
+! calculation of modified partition function
+
+! since the partition function is a sum over all bound states,
+! the occupation numbers are calculated here as well
+
+! NOTE:
+! in case of xrays, we have tested (in indexfre) that all required
+! entries in indexex and indexopa are ne 0, avoiding the approx. Trad = Teff
+! (in other words, the freq. grid extends to high enough frequencies)
+
+! WRITTEN:
+! 09/96, U.S.
+
+! CHANGES:
+! 02/00 to f90 and consistency with nlte, JP.
+! note, that for w=1 ALL levels are now included in the partition
+! function, in order to allow for correct thermalization
+! 10/02  completely new
+
+! independent of clumping, since all values (beta!) already calculated
+! in ionis
+
+! note that this routine preserves the old approach of considering
+! ionizations to groundstates
+! (even if the upper bf state is an excited one). This will lead to
+! stronger deviations between the approximate and the almost exact method, &
+! compared to the results displayed in the FASTWIND paper.
+
+! ---------------------------------------------------------------------- &
+
+  Use :: nlte_type
+  Use :: fund_const, Only: c2 => hkl
+  Use :: fastwind_params, Only: natom, nrec
+
+  Use :: nlte_var, Only: tradj, fre, ifre
+  Use :: nlte_app, Only: nwne, jatom, jmax, lwion, kel, iel, ielev, indexex, &
+    occng, gstat, ergion, upart, metall, te, wion, teff, coll_therm, &
+    corr_beta, xion, indexopa, ilow, ipop, trans, zeta, zeta_mj, crodat, c_n, &
+    c_mj
+
+  Implicit None
+  Integer (i4b), Intent (In) :: ntemp
+  Logical, Intent (In) :: lteopt
+
+
+  Character (1) :: met
+  Integer (i4b) :: i, j, js, k, lev, ind, il, ip, jstart, jj, kk
+  Real (dp) :: et, trad1, t1, ti, tm, ground, e1, ei, em, el, deim, alphasum, &
+    add1, dummy
+  Real (dp) :: integral, aux, xil, xip, tradmean, fac, weight
+
+  Do js = ntemp, nwne
+    Do k = 1, natom
+      upart(k, jmax(k)+1, js) = gstat(k, jmax(k)+1, 1)
+    End Do
+  End Do
+
+  occng = 0. !                      required
+
+  c_n = 0.
+
+rec: Do i = 1, nrec
+    k = kel(i)
+    If (jatom(k)==0) Cycle
+    j = iel(i)
+    ground = xion(k, j)
+    e1 = ergion(k, j, 1)
+
+!   ground state contribution
+
+    Do js = ntemp, nwne
+      upart(k, j, js) = gstat(k, j, 1)
+    End Do
+
+    If (ntemp>lwion) Then
+      Write (999, *) ' stop: ntemp > lwion'
+      Stop 'ntemp > lwion'
+    End If
+    If (lwion>nwne) Then
+      Write (999, *) ' stop: something wrong with lwion'
+      Stop ' something wrong with lwion'
+    End If
+
+    If (lteopt) Then
+      jstart = ntemp
+    Else
+      jstart = lwion
+    End If
+
+!   first loop
+!   lte case (for all depth points or only from lwion on)
+levlte: Do lev = 2, ielev(i)
+
+
+      met = metall(k, j, lev)
+!     excitation energy of considered levels
+      el = ergion(k, j, lev) - e1
+
+!     "normal" levels
+      If (met=='m' .Or. met=='s') Then
+        Do js = jstart, nwne
+          et = c2*el/te(js)
+          occng(i, lev, js) = exp(-et)
+        End Do
+
+!       for lowest part of atmosphere, include all remaining levels
+      Else
+!       for wind, set these levels explicitely to zero, in case lwion or
+!       ntemp has changed!
+        Do js = 1, lwion - 1
+          occng(i, lev, js) = 0.
+        End Do
+        Do js = lwion, nwne
+          et = c2*el/te(js)
+          occng(i, lev, js) = exp(-et) ! wion=1 assumed
+        End Do
+      End If
+
+    End Do levlte
+
+    If (lteopt) Go To 100 !         all occupation numbers done
+
+!   2nd loop: 's' levels connected to ground states or ipop ne 0 levels (m and
+!   s)
+
+    alphasum = 0.
+
+levground: Do lev = 2, ielev(i)
+
+      met = metall(k, j, lev)
+      el = ergion(k, j, lev) - e1
+
+      il = ilow(k, j, lev)
+      ip = ipop(k, j, lev)
+
+      If (met=='m' .And. ip/=0) Then
+!       population over higher lying excited levels
+        alphasum = alphasum + crodat(i, lev)
+        Do js = ntemp, lwion - 1
+          If (indexex(i,lev)==0) Then
+            trad1 = teff
+          Else
+            trad1 = tradj(js, indexex(i,lev))
+          End If
+!         HERE: trans definitely different from "el"
+          et = c2*el/trad1
+          occng(i, lev, js) = exp(-et)
+        End Do
+!       normal 's' levels
+      Else If (met=='s' .And. il==1) Then
+!       consistency check
+        If (abs(el-trans(k,j,lev))>el*1.D-5) Then
+          Write (999, *) ' stop: el ne trans'
+          Stop ' el ne trans'
+        End If
+        alphasum = alphasum + crodat(i, lev)
+        Do js = ntemp, lwion - 1
+          If (indexex(i,lev)==0) Then
+            trad1 = teff
+          Else
+            trad1 = tradj(js, indexex(i,lev))
+          End If
+          et = c2*el/trad1
+          occng(i, lev, js) = corr_beta(i, lev, js)*wion(js)* &
+            (1.-coll_therm(i,lev,js))*exp(-et) + coll_therm(i, lev, js)*exp( &
+            -et*trad1/te(js))
+        End Do
+
+!       excitation from meta-stable state (ipop ne 0)
+      Else If (met=='s' .And. ip/=0) Then
+
+        If (il>=lev) Then
+          Write (999, *) ' stop: il ge lev for s-levels'
+          Stop 'il ge lev for s-levels'
+        End If
+        deim = ergion(k, j, lev) - ergion(k, j, il)
+!       one more consistency check
+        If (abs(deim-trans(k,j,lev))>deim*1.D-5) Then
+          Write (999, *) ' stop: deim ne trans'
+          Stop ' deim ne trans'
+        End If
+        alphasum = alphasum + crodat(i, lev)
+        Do js = ntemp, lwion - 1
+          If (indexex(i,lev)==0) Then
+            trad1 = teff
+          Else
+            trad1 = tradj(js, indexex(i,lev))
+          End If
+          et = c2*deim/trad1
+!         statistical weight of gm cancels out
+          If (occng(i,il,js)==0.) Then ! for tests only
+            Write (999, *) &
+              ' stop: error in lower (meta-stable) state (ipop ne 0)!'
+            Stop ' error in lower (meta-stable) state (ipop ne 0)!'
+          End If
+          occng(i, lev, js) = occng(i, il, js)*(corr_beta(i,lev,js)*wion(js)*( &
+            1.-coll_therm(i,lev,js))*exp(-et)+coll_therm(i,lev,js)*exp(-et* &
+            trad1/te(js)))
+        End Do
+
+      End If
+    End Do levground
+!   consistency check
+    alphasum = 1./(1.+alphasum)
+    If (abs(1.-alphasum/zeta(k,j))>1.D-5) Then
+      Write (999, *) ' stop: error in alphasum'
+      Stop ' error in alphasum'
+    End If
+
+!   3rd loop: 's' levels connected to metastable states with ipop = 0, &
+!   occng with respect to nm
+
+levmeta: Do lev = 2, ielev(i)
+
+      met = metall(k, j, lev)
+
+      ip = ipop(k, j, lev)
+      il = ilow(k, j, lev)
+!     excitation from meta-stable state (ip eq 0)
+      If (met=='s' .And. il/=1 .And. ip==0) Then
+
+        If (il>=lev) Then
+          Write (999, *) ' stop: il ge lev for s-levels'
+          Stop 'il ge lev for s-levels'
+        End If
+        deim = ergion(k, j, lev) - ergion(k, j, il)
+!       one more consistency check
+        If (abs(deim-trans(k,j,lev))>deim*1.D-5) Then
+          Write (999, *) ' stop: deim ne trans'
+          Stop ' deim ne trans'
+        End If
+
+        Do js = ntemp, lwion - 1
+          If (indexex(i,lev)==0) Then
+            trad1 = teff
+          Else
+            trad1 = tradj(js, indexex(i,lev))
+          End If
+          et = c2*deim/trad1
+!         statistical weight of gm cancels out
+          If (occng(i,il,js)/=0.) Then
+            Write (999, *) &
+              ' stop: error in lower (meta-stable) state(ipop =0)!'
+            Stop ' error in lower (meta-stable) state(ipop =0)!'
+          End If
+!         so far, only excitation
+          occng(i, lev, js) = (corr_beta(i,lev,js)*wion(js)*(1.-coll_therm(i, &
+            lev,js))*exp(-et)+coll_therm(i,lev,js)*exp(-et*trad1/te(js)))
+        End Do
+      End If
+    End Do levmeta
+
+!   4th loop: sum up ni/n1*Rik/R1k and ni/nm*Rik/Rmk to obtain C_N, C_Mj and
+!   Zeta_Mj
+
+    c_mj = 0.
+    zeta_mj = 0.
+levsum: Do lev = 2, ielev(i)
+
+      met = metall(k, j, lev)
+!     excitation energy of considered levels
+      el = ergion(k, j, lev) - e1
+
+!     ioniz. energy, modified by e1 for consistency
+      ei = ground - el
+
+      il = ilow(k, j, lev)
+      ip = ipop(k, j, lev)
+
+      If ((met=='s' .And. il==1) .Or. ip/=0) Then
+!       connected to ground state (including ipop ne 0 states (m and s)
+        Do js = ntemp, lwion - 1
+
+          ind = indexopa(i, 1)
+          If (ind/=0) Then
+            t1 = tradj(js, ind)
+          Else
+            t1 = teff
+          End If
+
+          ind = indexopa(i, lev)
+          If (ind/=0 .And. t1/=teff) Then
+            ti = tradj(js, ind)
+          Else
+            ti = teff
+          End If
+!         ni/n1*Rik/R1k
+          If (occng(i,lev,js)==0.) Then
+            Write (999, *) ' stop: error in s-state (c_n)!'
+            Stop ' error in s-state (c_n)!'
+          End If
+          add1 = crodat(i, lev)*ti/t1*exp(c2*(ground/t1-ei/ti))* &
+            occng(i, lev, js)
+          c_n(k, j, js) = c_n(k, j, js) + add1
+        End Do
+
+
+      Else If (met=='s' .And. il/=1 .And. ip==0) Then
+!       connected to meta-stable-state
+
+        Do js = ntemp, lwion - 1
+
+          ind = indexopa(i, 1)
+          If (ind/=0) Then
+            t1 = tradj(js, ind)
+          Else
+            t1 = teff
+          End If
+
+          ind = indexopa(i, lev)
+          If (ind/=0 .And. t1/=teff) Then
+            ti = tradj(js, ind)
+          Else
+            ti = teff
+          End If
+
+          ind = indexopa(i, il)
+          If (ind/=0 .And. t1/=teff) Then
+            tm = tradj(js, ind)
+          Else
+            tm = teff
+          End If
+!         ni/nm*Rik/Rmk
+          If (occng(i,lev,js)==0.) Then
+            Write (999, *) ' stop: error in s-state (c_m)!'
+            Stop ' error in s-state (c_m)!'
+          End If
+          If (occng(i,il,js)/=0.) Then
+            Write (999, *) ' stop: error in m-state (c_m)!'
+            Stop ' error in m-state (c_m)!'
+          End If
+
+          em = ground - (ergion(k,j,il)-e1)
+          add1 = crodat(i, lev)/crodat(i, il)*ti/tm*exp(c2*(em/tm-ei/ti))* &
+            occng(i, lev, js)
+          c_mj(il, js) = c_mj(il, js) + add1
+        End Do
+        zeta_mj(il) = zeta_mj(il) + crodat(i, lev)
+      End If
+
+    End Do levsum
+
+!   now we can calculate nm/n1 in the 5th loop
+
+levdone: Do lev = 2, ielev(i)
+
+      met = metall(k, j, lev)
+      ip = ipop(k, j, lev)
+      il = ilow(k, j, lev)
+      If (met=='m' .And. ip==0) Then
+        em = ground - (ergion(k,j,lev)-e1)
+
+!       check for singular meta-stable levels (for tests only)
+        If (zeta_mj(lev)==0.) Then
+          Do jj = 2, ielev(i)
+            If (ilow(k,j,jj)==lev) Then
+              Write (999, *) k, j, jj, ilow(k, j, jj)
+              Print *, k, j, jj, ilow(k, j, jj)
+              Stop ' error in singular metastable levels'
+            End If
+          End Do
+        End If
+!       final result for zeta_mj
+        zeta_mj(lev) = 1./(crodat(i,lev)+zeta_mj(lev))
+
+        Do js = ntemp, lwion - 1
+
+          ind = indexopa(i, 1)
+          If (ind/=0) Then
+            t1 = tradj(js, ind)
+          Else
+            t1 = teff
+          End If
+
+          ind = indexopa(i, lev)
+          If (ind/=0 .And. t1/=teff) Then
+            tm = tradj(js, ind)
+          Else
+            tm = teff
+          End If
+
+          If (occng(i,lev,js)/=0.) Then
+            Write (999, *) ' stop: error in m-state (before done)!'
+            Stop ' error in m-state (before done)!'
+          End If
+!         avoid too strongly differing Trads for low-lying metastable levels
+!         if edge
+!         between ground-state and metastable levels; thus, "exact"
+!         integration
+!         cf subr. netmat_met
+
+          If (ind/=0 .And. ind<ifre .And. t1/=teff) Then
+            kk = ind
+            If (em<=fre(ind+1)) Then
+              xil = c2*em/tm
+              xip = xil*fre(ind+1)/em
+            Else
+!             may happen because of definition of em
+              xil = c2*fre(ind)/tm
+              xip = xil*fre(ind+1)/fre(ind)
+            End If
+            integral = tm*(exp(-xil)-exp(-xip))
+            If (integral<=0.) Then
+              Write (999, *) ' stop: integral < 0 in partit'
+              Stop ' integral < 0 in partit'
+            End If
+
+            Do kk = ind + 1, indexopa(i, 1) - 1
+              tradmean = .5*(tradj(js,kk)+tradj(js,kk+1))
+              xil = c2*fre(kk)/tradmean
+              xip = xil*fre(kk+1)/fre(kk)
+              integral = integral + tradmean*(exp(-xil)-exp(-xip))
+            End Do
+            tm = tradj(js, kk)
+            xil = c2*fre(kk)/tm
+            integral = integral + tm*exp(-xil)
+            aux = 1.D0/integral
+          Else
+            aux = exp(c2*em/tm)/tm
+          End If
+          If (aux<=0.) Then
+            Write (999, *) js, i, lev
+            Print *, js, i, lev
+            Stop ' ioniz. integral negative in partit'
+          End If
+!         ------------------------------
+!         this is the old version with hack. Can lead to oscillations
+!         (s50inv), &
+!         since correction is not analytic (abrupt change).
+
+!         now, aux corresponds to exp(-energie_m/kTrad)/Trad with average Trad
+!         JO Oct. 2014 -> should read exp(+energie ...
+!         occng(i,lev,js)=aux*t1*exp(-c2*ground/t1)/crodat(i,lev)* &
+!         &               zeta(k,j)/zeta_mj(lev) *(1.+ c_n(k,j,js))/(1.+
+!         c_mj(lev,js))
+
+!         here comes the new hack
+!         if(occng(i,lev,js).gt.1.) then
+!         assume that c_mj is of the same order as c_n, and only small because
+!         of missing levels
+!         dummy=aux*t1*exp(-c2*ground/t1)/crodat(i,lev)* &
+!         &                 zeta(k,j)/zeta_mj(lev)
+!         occng(i,lev,js)=min(dummy,occng(i,lev,js))
+!         note: under certain conditions, n_m/n_1 can become quite large,
+!         leading
+!         to very large partition functions. An example is NiV where the
+!         meta-stable
+!         levels ionize to excited levels of NiVI.
+!         For X-ray conditions, the ground state has a higher Trad than the
+!         metastable
+!         levels, leading to quite high ratios (100) and partition functions
+!         (10^4).
+!         endif
+
+!         New version (v8.0, Jan 2015). Make a smooth transition between
+!         dummy*fac and dummy, &
+!         by using a smoothed heaviside function
+!         ------------------------------
+
+!         now, aux corresponds to exp(-energie_m/kTrad)/Trad with average Trad
+          dummy = aux*t1*exp(-c2*ground/t1)/crodat(i, lev)*zeta(k, j)/ &
+            zeta_mj(lev)
+          fac = (1.+c_n(k,j,js))/(1.+c_mj(lev,js))
+          If (fac<=1.D0) Then
+!           use standard version (above: min will be occng(i,lev,js)
+            occng(i, lev, js) = dummy*fac
+          Else
+!           new hack
+!           smoothed heaviside function around x=dummy*fac=1., with smoothing
+!           parameter k=5.d0 (k=10.d0 already too steep). Argument is log!
+!           leads to a smooth transition from dummy*fac (weight=0, for low
+!           values
+!           of occng) to dummy (weight=1, for large values of occng)
+            weight = 1.D0/(1.D0+exp(-2.D0*5.D0*log10(dummy*fac)))
+            occng(i, lev, js) = dummy*weight + dummy*fac*(1.D0-weight)
+          End If
+
+!         some check for isolated ground and metastable states
+          If (c_n(k,j,js)==0. .And. c_mj(lev,js)==0.) Then
+            If (zeta(k,j)/=1.) Then
+              Write (999, *) ' stop: isolated states, zeta .ne. 1'
+              Stop ' isolated states, zeta .ne. 1'
+            End If
+            If (abs(zeta_mj(lev)-1./crodat(i,lev))>1.D-10) Then
+              Write (999, *) ' stop: isolated states, zeta_mj .ne. 1/crodat'
+              Stop ' isolated states, zeta_mj .ne. 1/crodat'
+            End If
+          End If
+        End Do
+
+!       finally, we obtain the occup. numbers for those s-levels connected to
+!       m states
+      Else If (met=='s' .And. il/=1 .And. ip==0) Then
+        If (il>=lev) Then
+          Write (999, *) ' stop: il ge lev for s-levels'
+          Stop 'il ge lev for s-levels'
+        End If
+!       check also for underflow (highest ions in cool stars)
+        Do js = ntemp, lwion - 1
+!         might happen in cool stars for high ions
+          If (occng(i,il,js)==0.D0 .And. teff>9500.D0) Then
+            Write (999, *) ' stop: error in m-state (done)!'
+            Stop ' error in m-state (done)!'
+          End If
+          occng(i, lev, js) = occng(i, il, js)*occng(i, lev, js)
+        End Do
+      End If
+    End Do levdone
+
+!   ... and calculate the partition function for record i
+100 part: Do lev = 2, ielev(i)
+      Do js = ntemp, nwne
+        upart(k, j, js) = upart(k, j, js) + gstat(k, j, lev)*occng(i, lev, js)
+      End Do
+    End Do part
+
+  End Do rec
+
+  Return
+End Subroutine
+
+!----------------------------------------------------------------------
+
+Subroutine occup1(ntemp)
+! ----------------------------------------------------------------------
+! ground state occupation numbers
+! occ1 is n_1/n_e
+! thus indepedent of clumping
+! ----------------------------------------------------------------------
+  Use :: nlte_type
+  Use :: fastwind_params, Only: natom
+
+  Use :: nlte_app, Only: nwne, natom, jmax, gstat, fjk, upart, occ1, abund, &
+    xmuee, summas, jatom
+  Implicit None
+  Integer (i4b), Intent (In) :: ntemp
+
+  Integer (i4b) :: j, js, k
+  Real (dp) :: xjk, xnucl
+
+! ground state occupation numbers
+! -------------------------------
+  Do k = 1, natom
+    If (jatom(k)==0) Cycle
+
+    Do j = 1, jmax(k) + 1
+      Do js = ntemp, nwne
+        xnucl = abund(k)*xmuee(js)/summas
+        xjk = fjk(k, j, js)
+        occ1(k, j, js) = xjk*xnucl*gstat(k, j, 1)/upart(k, j, js)
+      End Do
+    End Do !                        ionization loop
+  End Do !                          atom loop
+
+  Return
+End Subroutine
+
+!----------------------------------------------------------------------
+
+Subroutine occup2(ntemp)
+! ----------------------------------------------------------------------
+! occupation numbers of all levels from file
+
+! OUTPUT:
+! occng(i,l,js): n_kjl/g_kjl/N_e
+! thus indepedent of clumping
+
+
+! CHANGES:
+! 07/96 test for abundance conservation
+! 09/96 simplified (already calculated in SR ionis)
+! 02/00 to f90 and consistency with nlte, JP.
+! ----------------------------------------------------------------------
+  Use :: nlte_type
+  Use :: fastwind_params, Only: natom, nrec
+
+  Use :: nlte_app, Only: nwne, natom, nrec, jmax, kel, iel, ielev, indrec, &
+    occng, occ1, gstat, abund, xmuee, summas, lwion, jatom
+
+  Implicit None
+  Integer (i4b), Intent (In) :: ntemp
+
+  Integer (i4b) :: i, irec, j, js, k, l, lev, jm
+  Real (dp) :: occsum, xnk
+
+! compute occupation numbers for all existing levels
+  Do i = 1, nrec
+    k = kel(i)
+    If (jatom(k)==0) Cycle
+    j = iel(i)
+
+    Do lev = 1, ielev(i)
+
+!     ground states
+
+      If (lev==1) Then
+        Do js = ntemp, nwne
+          occng(i, lev, js) = occ1(k, j, js)/gstat(k, j, 1)
+        End Do
+
+!       others, as determined in SR partit
+      Else
+        Do js = ntemp, nwne
+          occng(i, lev, js) = occng(i, 1, js)*occng(i, lev, js)
+        End Do
+      End If
+    End Do !                        level loop
+  End Do !                          record loop
+
+! test for abundance conservation
+atom: Do k = 1, natom
+    If (jatom(k)==0) Cycle atom
+
+    Do js = ntemp, nwne
+!     local number of particles in unites of ne(js) -- checked!
+      xnk = abund(k)*xmuee(js)/summas
+      occsum = 0.
+
+      jm = jmax(k)
+      Do j = 1, jm
+        irec = indrec(k, j)
+        Do l = 1, ielev(irec)
+          occsum = occsum + gstat(k, j, l)*occng(irec, l, js)
+        End Do
+      End Do
+      j = jm + 1
+      occsum = occsum + occ1(k, j, js) ! last ion, only ground-state, occ1
+!     without gstat
+
+      If (abs(xnk/occsum-1.)>=1.D-6) Then
+        Write (999, *) ' abundance not conserved in occup2'
+        Write (999, *) ' k,js, xnk/occsum -1: ', k, js, xnk/occsum - 1.
+        Write (999, *) lwion, ntemp
+        Write (*, *) ' abundance not conserved in occup2'
+        Write (*, *) ' k,js, xnk/occsum -1: ', k, js, xnk/occsum - 1.
+        Print *, lwion, ntemp
+        Stop
+      End If
+
+    End Do !                        radius loop
+  End Do atom !                     atom loop
+
+  Return
+End Subroutine
+
+!----------------------------------------------------------------------
+
+Subroutine ionout(lteopt)
+! ----------------------------------------------------------------------
+! output of ionisation structure as calculated in sr ionis
+
+! WRITTEN:
+! 04/96, U.S
+! CHANGES:
+! 02/00 to f90 and consistency with nlte, JP.
+! ----------------------------------------------------------------------
+  Use :: nlte_type
+  Use :: nlte_var, Only: modnam
+  Use :: fastwind_params, Only: ndebug, natom, nion, name
+  Use :: nlte_app, Only: nwne, imax, indexel, jatom, jmax, abund, fjk, upart, &
+    xhy, xhe, wne, wion, te
+
+
+  Implicit None
+
+  Logical, Intent (In) :: lteopt
+
+  Integer (i4b) :: i, j, js, k
+
+  Real (dp) :: xmax, xold, ak
+
+! output of modified partition functions
+
+  If (ndebug>=3) Then
+    Write (*, '(/,a)') ' MOD. PARTITION FUNCTION'
+    Do js = 1, nwne
+      If (js/=1 .And. js/=nwne .And. mod(js,6)/=0 .And. wion(js)/=0.5 .And. &
+        wion(js)/=0.75) Cycle
+      Write (*, '(/,a,i3,/)') ' RADIUS SHELL = ', js
+      Do k = 1, natom
+        If (jatom(k)/=0) Then
+          Write (*, 100) k, (upart(k,j,js), j=1, jmax(k)+1)
+        End If
+      End Do
+    End Do
+  End If
+
+! output of maximum ionisation stage
+
+  If (ndebug>=1) Then
+
+    Write (*, '(//,a)') ' OUTPUT OF IONISATION STRUCTURE'
+    Write (*, *) '=============================='
+    Write (*, '(/,a)') ' main ionisation stage of elements'
+    Write (*, *) '---------------------------------'
+    Write (*, 110) '#', (name(i), i=1, natom)
+    Write (*, 120)
+
+    Do js = 1, nwne
+!     if(js.ne.1.and.js.ne.nwne.and.mod(js,6).ne.0.and.wion(js).ne.0.5&
+!     .and.wion(js).ne.0.75) cycle
+atom: Do k = 1, natom
+        imax(k) = 0
+        xold = 0.
+        If (jatom(k)==0) Then
+          imax(k) = 0
+          Cycle atom
+        End If
+
+        Do j = 1, jmax(k) + 1
+          xmax = max(xold, fjk(k,j,js))
+          If (xmax>xold) imax(k) = j
+          xold = xmax
+        End Do
+      End Do atom
+      Write (*, 130) js, (imax(k), k=1, natom)
+    End Do
+  End If
+
+! output of main species (HI or HeII)-Ionisation structure
+
+  If (ndebug>=2) Then
+    If (xhy>xhe) Then
+      Write (*, '(/,a)') ' RUN OF H IONISATION: N_j/N_H'
+    Else
+      Write (*, '(/,a)') ' RUN OF He IONISATION: N_j/N_He'
+    End If
+    Write (*, 140)
+
+    Do js = 1, nwne
+      If (js/=1 .And. js/=nwne .And. mod(js,6)/=0 .And. wion(js)/=0.5 .And. &
+        wion(js)/=0.75) Cycle
+      If (xhy>xhe) Then
+        Write (*, 150) js, (fjk(1,j,js), j=1, 2)
+      Else
+        Write (*, 150) js, (fjk(2,j,js), j=1, 3)
+      End If
+    End Do
+  End If
+
+! output of ionisation structure of all elements
+
+  If (ndebug>=2) Then
+!   new from V6.1 on
+    If (lteopt) Then
+      Open (287, File=trim(modnam)//'/METAL_IDL_LTE', Status='unknown')
+      Open (288, File=trim(modnam)//'/METAL_IONS_LTE', Status='unknown')
+    Else
+      Open (287, File=trim(modnam)//'/METAL_IDL', Status='unknown')
+      Open (288, File=trim(modnam)//'/METAL_IONS', Status='unknown')
+    End If
+
+    Write (288, '(a)') '# (f_jk=N_jk/N_k)'
+!   write(*,'(a)') '# (f_jk=N_jk/N_k)'
+
+    Do js = 1, nwne
+
+      Do k = 1, natom
+        Write (287, 170) k, (fjk(k,j,js), j=1, nion)
+      End Do
+
+      If (js/=1 .And. js/=nwne .And. mod(js,6)/=0 .And. wion(js)/=0.5 .And. &
+        wion(js)/=0.75) Cycle
+
+      Write (288, 160) js, wne(js), te(js), wion(js)
+!     write(*,33) js,wne(js),te(js),wion(js)
+      Do k = 1, natom
+        If (abund(k)/=0.) Then
+          Write (288, 170) k, (fjk(k,j,js), j=1, nion)
+!         write(*,34) k,(fjk(k,j,js),j=1,nion)
+        End If
+      End Do
+    End Do
+    Print *
+    Print *
+
+!   output of ionisation structure of NLTE-elements with respect to N_H
+
+    Write (288, '(a)') '# (N_jk/N_H)'
+!   write(*,'(a)') '# (N_jk/N_H)'
+
+    Do js = 1, nwne
+      If (js/=1 .And. js/=nwne .And. mod(js,6)/=0 .And. wion(js)/=0.5 .And. &
+        wion(js)/=0.75) Cycle
+      Write (288, 160) js, wne(js), te(js), wion(js)
+!     write(*,33) js,wne(js),te(js),wion(js)
+      Do k = 1, natom
+        If (indexel(k)>0) Then
+          ak = abund(k)/abund(1)
+          Write (288, 180) k, (fjk(k,j,js)*ak, j=1, nion)
+!         write(*,35) k,(fjk(k,j,js)*ak,j=1,nion)
+        End If
+      End Do
+    End Do
+    Close (287)
+    Close (288)
+  End If
+  Return
+
+100 Format (I4, 2X, 9(F8.1,1X))
+
+110 Format (/, A4, 30(1X,A2))
+120 Format (94('-'))
+130 Format (I4, 30(1X,I2))
+140 Format (49('-'))
+
+150 Format (I4, 2X, 3(G10.3,2X), F7.4)
+
+160 Format (/, '# i = ', I4, ' wne = ', E10.4, ' T_e = ', F7.0, ' dilfac = ', &
+    E10.4)
+170 Format (I4, 2X, 1P, 9(G10.3,1X))
+180 Format (I4, 2X, 9(E8.2,1X))
+
+End Subroutine
+
+!----------------------------------------------------------------------
+
+Subroutine indexfre(lteopt)
+
+! calculates indexfile for metal opacities (start-freq.), cross-sections
+! for most important bf transitions and index-files for radiation temperatures
+! used in NLTE
+
+! specific caution has to be taken for elements simultaneously present
+! in NLTE and approximate treatment, since ionization edges may be
+! defined at (slightly) different frequencies
+
+! 8/07/02 small changes to discard only those ionization stages of
+! preespecified atoms that are not included  (m. urbaneja)
+
+! 04/2006: allows for bf transitions to excited levels
+
+! 10/2014
+! in case of xrays, we test that all required entries in
+! indexopa, indexfrec and indexex are ne 0, i.e., contain an index
+! (in other words, the freq. grid extends to high enough frequencies)
+
+  Use :: nlte_type
+  Use :: nlte_var, Only: fre, ifre
+  Use :: fastwind_params, Only: cutoff, ndebug, natom, nrec
+! maup, indexelion
+  Use :: nlte_app, Only: nout, indexel, indexex, indexfrec, indexopa, indrec, &
+    jatom, jatom_full, jmax, xion, kel, iel, ielev, ergion, metall, opametinf, &
+    alphamet, alpha, beta, s, indexelion, ibfup, ilow, ipop, trans
+  Use :: princesa_var, Only: index4, labl4, le, nions, frecin, zl, nat, zeff
+
+  Use :: nlte_xrays, Only: optxray
+
+  Implicit None
+  Logical, Intent (In) :: lteopt
+
+  Integer (i4b) :: k, knlte, kl, i, ilo, iz, j, lev, n, nionnlte, niontest, &
+    number, iup
+  Real (dp) :: a, diffe, diffe1, edge, energy, ground, new_energy, frec, x, &
+    alphai, betai, si
+
+
+  If (.Not. lteopt) Then
+!   changed Dec. 11/2012: put as first block because in NLTE case
+!   xion is changed, and this has an effect on indexopa
+!   otherwise, restart does not work correctly
+
+!   find ground state transition edges of NLTE ions
+!   thus far (ver 6.0), we do not modifiy this loop
+    niontest = 0
+atomloop: Do k = 1, natom
+      If (jatom(k)==0) Cycle atomloop
+      knlte = indexel(k)
+      If (knlte<=0) Cycle atomloop
+ionloop: Do j = 1, jmax(k)
+        ground = ergion(k, j, 1)
+        energy = xion(k, j) - ground
+        diffe = energy
+        new_energy = 0.
+tranloop: Do i = 1, index4
+          a = frecin(i)
+          ilo = labl4(i)
+          iz = zl(ilo)
+          kl = le(ilo)
+
+!         check only for ions k,j
+
+          If (iz+1/=j .Or. kl/=knlte) Cycle tranloop
+          diffe1 = abs(a-energy)
+          If (diffe1<diffe) Then
+            diffe = diffe1
+            new_energy = a
+          End If
+        End Do tranloop
+        If (new_energy==0.) Then
+          If (nout==1 .And. ndebug>=3) Write (*, 100) k, j
+        Else
+          niontest = niontest + 1
+          If (nout==1 .And. ndebug>=3) Write (*, 110) k, j, 1.D8/energy, &
+            1.D8/new_energy
+          If (abs(1.-energy/new_energy)>0.01) Then
+            Write (999, *) ' stop:  something wrong with ionization energies'
+            Stop ' something wrong with ionization energies'
+          End If
+          xion(k, j) = new_energy + ground
+        End If
+      End Do ionloop
+    End Do atomloop
+
+    nionnlte = sum(nions) - nat
+    If (niontest/=nionnlte) Then
+      Write (999, *) ' stop: not all NLTE-ions found in indexfre'
+      Stop ' not all NLTE-ions found in indexfre'
+    End If
+    If (nout==1 .And. ndebug>=3) Print *
+
+  End If
+
+! set up the indexopa-array (starting point for opacities) for ALL edges
+! and provide info which opacities shall be used in opacitm.
+! the corresponding index file "opametinf" includes
+! i) all levels for the "selected" atoms, &
+! ii) the ground, 's' and 'm' levels down to cutoff fraction of
+! ionization energy for non-selected atoms and
+! iii) discards all explicit IONS (present in NLTE)
+
+  indexopa = 0
+  opametinf = 0
+
+  indexelion = 0 !                  maup, seleccion on preespecified NLTE ions
+rec0: Do n = 1, nrec
+    k = kel(n)
+    If (indexel(k)<=0) Cycle rec0
+    j = indexel(k)
+    Do lev = 1, nions(j) - 1
+      number = lev + int(zeff(j))
+      indexelion(k, number) = 1
+    End Do
+  End Do rec0
+
+! at first, set up information file which levels are used
+  number = 0
+rec1: Do n = 1, nrec
+    k = kel(n)
+    If (jatom(k)==0) Cycle rec1
+!   if (indexel(k).gt.0) cycle rec1
+    j = iel(n)
+    If ((indexelion(k,j)==1) .And. (indexel(k)>0)) Cycle rec1
+    ground = xion(k, j)
+level1: Do lev = 1, ielev(n)
+      energy = ground - ergion(k, j, lev)
+      If (jatom_full(k)/=1 .And. lev/=1 .And. metall(k,j,lev)==' ') &
+        Cycle level1
+      If ((1.-energy/ground)>cutoff) Cycle level1
+
+!     to avoid difficulties in convergence (excited levels in same cont)
+
+!     with new versions, this seems to be no longer necessary
+
+!     allows also for HeI and HeII for approx calculation if database
+!     ATOMDAT is used
+
+!     check for cool stars (carbon has groundstate and 2nd level in
+!     Balmer-cont
+!     should be included to allow for depopulation
+!     print*,k,j,lev,ground,energy
+!     if     (ground.gt.436881.) then    !shortward HeII
+!     if (lev.ne.1.and.energy.gt.436881.) cycle level1
+!     else if(ground.gt.198412.) then    !shortward HeI
+!     if (lev.ne.1.and.energy.gt.198412.) cycle level1
+!     else if(ground.gt.109649.) then    !shortward H-Ly
+!     if (lev.ne.1.and.energy.gt.109649.) cycle level1
+!     else if(ground.gt. 27419.) then    !shortward H-Ba
+!     if (lev.ne.1.and.energy.gt. 27419.) cycle level1
+!     else
+!     if (lev.ne.1) cycle level1       ! H-Pa continuum
+!     endif
+
+      number = number + 1
+      opametinf(n, lev) = number
+    End Do level1
+  End Do rec1
+
+  If (nout==1 .And. ndebug>=3) Then
+    Print *
+    Print *, number, ' EDGES LOCATED FOR METAL OPACITIES'
+    Print *
+  End If
+
+! now setup "edge" information and
+! calculate cross sections for ALL considered levels and frequencies
+
+  Allocate (alphamet(number,ifre))
+
+rec2: Do n = 1, nrec
+    k = kel(n)
+    If (jatom(k)==0) Cycle rec2
+    j = iel(n)
+    ground = xion(k, j)
+
+!   ionization to ground states (for non-selected elements)
+!   AND excited states (for selected elements)
+
+level2: Do lev = 1, ielev(n)
+!     number=opametinf(n,lev)
+!     if(number.eq.0) cycle level2
+      edge = ground - ergion(k, j, lev)
+      iup = ibfup(k, j, lev)
+      If (jatom_full(k)==1 .And. iup/=1) edge = edge + ergion(k, j+1, iup)
+
+frecloop2: Do i = 2, ifre
+        frec = fre(i)
+        If (edge<=frec) Then
+          If (indexopa(n,lev)==0) Then
+            indexopa(n, lev) = i
+!           cross-sections required only if included in opacities
+            number = opametinf(n, lev)
+!           if(number.ne.0) print*,k,j,lev,edge,frec,1.d8/frec,i,number
+            If (number==0) Cycle level2
+          End If
+          x = edge/frec
+          alphai = alpha(n, lev)*1.D-18
+          betai = beta(n, lev)
+          si = s(n, lev)
+          alphamet(number, i) = alphai*(betai*x**si+(1.-betai)*x**(si+1))
+          If (alphamet(number,i)<=0.D0) Then
+            If (betai>=0.) Then
+              Write (999, *) &
+                ' stop: ALPHA NEGATIVE AND BETA POSITIV (nlte_approx)'
+              Stop ' ALPHA NEGATIVE AND BETA POSITIV (nlte_approx)'
+            End If
+            alphamet(number, i) = 1.D-40
+          End If
+        End If
+      End Do frecloop2
+    End Do level2
+  End Do rec2
+
+! tests in case of xrays
+  If (optxray) Then
+    Do n = 1, nrec
+      k = kel(n)
+      If (jatom(k)==0) Cycle
+
+      Do lev = 1, ielev(n)
+        If (indexopa(n,lev)==0) Then
+          Write (999, *) ' stop: indexopa = 0'
+          Stop ' indexopa = 0'
+        End If
+      End Do
+    End Do
+  End If
+
+  If (lteopt) Return
+
+  indexfrec = 0
+  indexex = 0
+
+! now we can set up the indexfrec-array (ground-state ionization only)
+
+! in former versions, this seemed to be superfluous, since indexfrec(k,j)
+! should be indexopa(n,1)
+! from version 6.0 on, this is no longer necessarily true, due to the
+! possibility of ionizations to excited levels
+
+  niontest = 0
+atomloop1: Do k = 1, natom
+    If (jatom(k)==0) Cycle atomloop1
+ionloop1: Do j = 1, jmax(k)
+      energy = xion(k, j) - ergion(k, j, 1)
+
+!     assumes that energies are orderer from low to high
+
+frecloop: Do i = 2, ifre
+        frec = fre(i)
+        If (energy==frec) Then
+          niontest = niontest + 1
+          indexfrec(k, j) = i
+          If (nout==1 .And. ndebug>=3) Print *, k, j, 'EXACTLY FOUND'
+          Cycle ionloop1
+        Else If (energy<frec) Then
+          indexfrec(k, j) = i
+          n = indrec(k, j)
+          If (i/=indexopa(n,1) .And. ndebug==3) Then
+            Print *, ' no ground-state ionization'
+            Print *, 'index ', n, ' frequency ', frec, i
+            Print *, indexopa(n, 1), ' atom ', k, ' ion ', j
+          End If
+          Cycle ionloop1
+        End If
+      End Do frecloop
+
+!     tests in case of xrays
+      If (optxray) Then
+        Write (999, *) ' stop: indexfrec = 0'
+        Stop ' indexfrec = 0'
+      End If
+      If (indexfrec(k,j)/=0) Then
+        Write (999, *) ' stop: not found 1'
+        Stop ' not found 1'
+      End If
+
+    End Do ionloop1
+  End Do atomloop1
+
+  If (nout==1 .And. ndebug>=3) Then
+    Print *
+    Print *, niontest, ' NLTE-EDGES EXACTLY FOUND IN FREQ. GRID'
+    Print *
+  End If
+
+! now we can set up the indexex-array (radiation temperatures for excitation)
+
+rec: Do n = 1, nrec
+    k = kel(n)
+    If (jatom(k)==0) Cycle rec
+    j = iel(n)
+    ground = ergion(k, j, 1)
+level: Do lev = 2, ielev(n)
+      If (metall(k,j,lev)=='s') Then
+        If (ilow(k,j,lev)==1) Then
+          energy = ergion(k, j, lev) - ground
+        Else
+          energy = ergion(k, j, lev) - ergion(k, j, ilow(k,j,lev))
+        End If
+      Else If (metall(k,j,lev)=='m' .And. ipop(k,j,lev)/=0) Then
+        energy = ergion(k, j, ipop(k,j,lev)) - ground
+      Else
+        Cycle level
+      End If
+!     consistency check
+      If (abs(energy-trans(k,j,lev))>energy*1.D-5) Then
+        Print *, k, j, lev, energy, trans(k, j, lev)
+        Print *, k, j, lev, energy, trans(k, j, lev)
+        Write (999, *) ' stop: energy ne trans'
+        Stop ' energy ne trans'
+      End If
+frecloop1: Do i = 2, ifre
+        frec = fre(i)
+        If (energy<=frec) Then
+          diffe = abs(energy-frec)
+          diffe1 = abs(energy-fre(i-1))
+          If (diffe<=diffe1) Then
+            indexex(n, lev) = i
+          Else
+            indexex(n, lev) = i - 1
+          End If
+          Cycle level
+        End If
+      End Do frecloop1
+
+!     tests in case of xrays
+      If (optxray) Then
+        Write (999, *) ' stop: indexex = 0'
+        Stop ' indexex = 0'
+      End If
+      If (indexex(n,lev)/=0) Then
+        Write (999, *) ' stop: not found 2'
+        Stop ' not found 2'
+      End If
+    End Do level
+  End Do rec
+
+  Return
+
+100 Format (' ION(', I2, ',', I2, ') not in DETAIL')
+110 Format (' ION(', I2, ',', I2, ') WITH OLD EDGE ', F12.6, ' CHANGED TO ', &
+    F12.6)
+
+End Subroutine
+
+!----------------------------------------------------------------------
+
+Subroutine opacitm(nd, xne, temp, clf, lteopt, ntemp, opteta, frenew, it0)
+
+! calculates opacities (and emissivities for opteta) for
+! all levels and frequencies specified in routine indexfre, i.e., &
+! for the most important metallic levels excluding those elements &
+! treated in NLTE
+
+! clumping included
+! philosophy (as in opacitc): scale all opacities by CLF^(-1)
+! leave OPAFF (only needed for energy balance)
+
+  Use :: nlte_type
+  Use :: nlte_dim, Only: id_ndept, id_frec1
+  Use :: fund_const
+
+  Use :: nlte_opt, Only: optstark
+
+  Use :: fastwind_params, Only: fracmin, natom, nion, nrec
+
+  Use :: nlte_var, Only: fre, ifre, precis, opat_m_new, opat_m_nolines, &
+    etat_m_nolines, strue_m_new, thomson_lines, optlines, xnelte, gffnlte, &
+    ionmax, optneupdate, lwion1, lam_ly, after_update, metconv2
+
+  Use :: nlte_app, Only: lwion, kel, iel, ielev, ibfup, indexel, indexopa, &
+    jatom, jmax, opametinf, alphamet, gstat, occ1, occ1lte, occng, occnglte, &
+    abund, fjk, xmuee, summas, jatom_full, met_imin, met_imax, indrec
+
+  Use :: tcorr_var, Only: ffopa_m, dtffopa_m
+
+  Use :: nlte_lines, Only: wavblue, wavred, wavcon, nlam, opalgrid, opacgrid, &
+    fracth, fracnth, nlambox_ly, opa_eff_grid, calcopal
+
+  Use :: nlte_porvor, Only: epsi1, optthick, opa_eff_rat
+
+  Implicit None
+
+  Integer (i4b), Intent (In) :: nd, ntemp
+  Real (dp), Dimension (nd), Intent (In) :: xne, temp, clf
+  Logical, Intent (In) :: lteopt, opteta, frenew, it0
+
+  Integer (i4b) :: iz, k, kk, j, lev, ll, n, number, index, nlambox, iup, nup, &
+    lw
+  Real (dp) :: bn, bn1, depart, etab, freq, gf, gff, gs, opab, xni, xnistar, &
+    xmuene, xnk, z, opaff, opaff1, opal, slinel, chiff, chiffc, etaffc, xlam, &
+    opacg, x, expo, precis1
+
+  Real (dp), Dimension (id_ndept) :: xnerat
+  Real (dp), Dimension (id_frec1) :: hcfre3
+  Real (dp), Dimension (id_frec1, id_ndept) :: ehnuekt, opabf, etabf
+
+  External :: gff
+
+  ffopa_m = 0.
+  dtffopa_m = 0.
+
+! check for consistency when restart: in the very first LTE call,
+! lwion1 is not defined, but not needed here; otherwise, it has to be defined
+  If (.Not. lteopt .And. lwion1<=0) Then
+    Write (999, *) ' stop: NLTE and LWION1 = 0 in opacitm'
+    Stop ' NLTE and LWION1 = 0 in opacitm'
+  End If
+
+  If (lteopt .Or. it0 .Or. after_update) Then
+!   JO Jan 2016: if AFTER_UPDATE = T (just after update and
+!   optcmf_full=.true.),
+!   xne has to be xnelte
+    Do ll = ntemp, nd
+      If (xne(ll)/=xnelte(ll)) Then
+        Write (999, *) ' stop: error in ne -- lteopt'
+        Stop ' error in ne -- lteopt'
+      End If
+      xnerat(ll) = 1.D0
+    End Do
+    If (after_update) after_update = .False. ! reset
+  Else
+    Do ll = ntemp, nd
+      If (optneupdate .And. xne(ll)==xnelte(ll)) Then
+        Write (999, *) ' stop: error in ne -- nlteopt'
+        Stop ' error in ne -- nlteopt'
+      End If
+      xnerat(ll) = xne(ll)/xnelte(ll)
+    End Do
+  End If
+
+  If (frenew) Then !                prepare ff gaunt-factors for metal ions
+
+    If (nion/=ionmax) Then
+      Write (999, *) ' stop: nion incompatible in nlte and nlte_approx!'
+      Stop ' nion incompatible in nlte and nlte_approx!'
+    End If
+
+    Do ll = ntemp, nd
+      Do kk = 1, ifre
+        freq = fre(kk)
+        Do iz = 1, nion
+          z = float(iz)
+          gffnlte(iz, ll, kk) = gff(freq*clight, temp(ll), z, ll, kk, iz)*z*z
+        End Do
+      End Do
+    End Do
+  End If
+
+  Do kk = 1, ifre
+    freq = fre(kk)
+    Do ll = ntemp, nd
+      ehnuekt(kk, ll) = exp(-hkl*freq/temp(ll))
+    End Do
+  End Do
+
+  opabf = 0.D0
+  If (opteta) Then
+    hcfre3(1:ifre) = hc2*fre(1:ifre)**3
+    etabf = 0.D0
+  End If
+
+! no correction in this block
+rec: Do n = 1, nrec
+
+level: Do lev = 1, ielev(n)
+      number = opametinf(n, lev)
+      If (number==0) Cycle level !  excluding, e.g., explicit ions
+      index = indexopa(n, lev)
+      If (index==0) Cycle level !   eq.0 for edges larger than max(fre)
+
+      k = kel(n)
+      j = iel(n)
+!     for tests
+!     print*,'opacitm',k,j,lev
+      gs = gstat(k, j, lev)
+      iup = ibfup(k, j, lev)
+      If (jatom_full(k)/=1) iup = 1
+
+      Do kk = index, ifre
+        If (alphamet(number,kk)==0.D0) Then
+          Write (999, *) ' stop: error in alphamet'
+          Stop ' error in alphamet'
+        End If
+      End Do
+
+depth: Do ll = ntemp, nd
+        If (abund(k)*fjk(k,j,ll)<fracmin) Cycle depth
+        If (.Not. lteopt .And. jatom_full(k)==1. .And. ll<lwion1) Then ! here
+!         was
+!         the
+!         bug
+          If (met_imin(k,ll)==0 .Or. met_imax(k,ll)==0) Then
+            Write (999, *) ' stop: error in met_imin/imax'
+            Stop ' error in met_imin/imax'
+          End If
+          If (j<met_imin(k,ll) .Or. j>met_imax(k,ll)) Cycle depth
+        End If
+        xni = occng(n, lev, ll)*gs
+        If (iup==1 .Or. (.Not. lteopt .And. jatom_full( &
+          k)==1. .And. ll<lwion1 .And. j==met_imax(k,ll))) Then
+!         also for ionization to excited levels if j = imax
+!         see subr. opacitc (nlte.f90) and notes
+          xnk = occ1(k, j+1, ll) !  includes stat. weight
+          If (occnglte(n,lev,ll)==0.) Then
+            Write (999, *) ' stop: inconsistency in number'
+            Stop 'inconsistency in number'
+          End If
+          xnistar = xnk*occnglte(n, lev, ll)*gs/occ1lte(k, j+1, ll)*xnerat(ll)
+        Else
+          nup = indrec(k, j+1)
+          xnk = occng(nup, iup, ll)*gstat(k, j+1, iup)
+
+          If (xnk==0.) Then
+            Write (999, *) ll, n, lev, lteopt
+            Write (999, *) lwion1, met_imin(k, ll), met_imax(k, ll)
+            Write (999, *) k, j, iup, nup
+            Write (999, *) ' stop: xnk = 0 in opacitm'
+            Print *, ll, n, lev, lteopt
+            Print *, lwion1, met_imin(k, ll), met_imax(k, ll)
+            Print *, k, j, iup, nup
+            Stop ' xnk = 0 in opacitm'
+          End If
+          xnistar = xnk*occnglte(n, lev, ll)*gs/(occnglte(nup,iup,ll)*gstat(k, &
+            j+1,iup))*xnerat(ll)
+        End If
+
+        depart = xni/xnistar
+
+!       if(ll.eq.nd) print*,k,j,lev,ll,depart
+        lw = lwion
+        If (jatom_full(k)==1) lw = lwion1
+
+!       JO Jan. 2021
+!       because of different control, slight modification
+        If (.Not. metconv2) Then
+          precis1 = precis
+        Else
+!         in last iterations with metconv2, approximate elements might
+!         be affected by small inconsistencies regarding ne
+          precis1 = 1.D-2
+        End If
+        If ((lteopt .Or. ll>=lw) .And. abs(depart-1.D0)>precis1) Then
+          Write (999, *) lteopt, k, j, lev, ll, depart, precis1
+          Print *, lteopt, k, j, lev, ll, depart, precis1
+          Write (999, *) ' stop: error in depart - lte'
+          Stop ' error in depart - lte'
+        End If
+
+        opabf(index:ifre, ll) = opabf(index:ifre, ll) + &
+          xnistar*alphamet(number, index:ifre)*(depart-ehnuekt(index:ifre,ll))
+
+!       if(ll.eq.15.and.alphamet(number,658).ne.0.) &
+!       &    print*,'658',k,j,lev,depart,xnistar*alphamet(number,658)
+!       if(ll.eq.15.and.alphamet(number,659).ne.0.) &
+!       &    print*,'659',k,j,lev,depart,xnistar*alphamet(number,659)
+
+!       for tests of groundstate
+!       if(lev.eq.1) then
+!       opabfaux=xnistar*alphamet(number,index)*(depart-ehnuekt(index,ll))
+!       print*,ll,k,j,index,depart,opabfaux/clf(ll)
+!       endif
+        If (opteta) etabf(index:ifre, ll) = etabf(index:ifre, ll) + &
+          xnistar*alphamet(number, index:ifre)
+
+      End Do depth
+
+    End Do level
+  End Do rec
+
+! -------- now we have calculated bf opacity for all transitions and depths
+! -------- we continue with ff opacity and summ up everything,
+! -------- including clumping correction
+
+  Do ll = ntemp, nd
+
+    xmuene = xmuee(ll)*xne(ll)/summas ! (absolute number, including clf)
+
+    Do kk = 1, ifre
+
+
+      freq = fre(kk)
+      opaff = 0.D0
+      chiff = 1.3695D-23*xne(ll)/(freq**3*sqrt(temp(ll)))
+      chiffc = chiff*(1.D0-ehnuekt(kk,ll))
+      etaffc = chiff
+
+atom: Do k = 1, natom
+        If (jatom(k)==0) Cycle atom
+        If (indexel(k)>0) Cycle atom ! included in nlte
+
+ion:    Do j = 2, jmax(k)
+          xnk = abund(k)*fjk(k, j, ll)
+          If (xnk<fracmin) Cycle ion
+          xnk = xnk*xmuene !        total occupation of ion
+          iz = j - 1
+          gf = gffnlte(iz, ll, kk)
+          If (gf<=0.) Then
+            Write (999, *) ' stop: error in ff gaunt-factors'
+            Stop ' error in ff gaunt-factors'
+          End If
+          opaff = opaff + gf*xnk
+        End Do ion
+
+        j = jmax(k) + 1 !           highest stage
+        xnk = abund(k)*fjk(k, j, ll)
+        If (xnk>=fracmin) Then
+
+!         calculate total occupation of ion to check consistency
+          xnk = xnk*xmuene
+          If (abs(1.-xnk/occ1(k,j,ll))>precis) Then
+            Write (999, *) lteopt, frenew
+            Write (999, *) abund(k), fjk(k, j, ll), xmuene
+            Write (999, *) k, j, ll, xnk, occ1(k, j, ll)
+            Write (999, *) ' stop: error in occ.num of highest ion'
+            Print *, lteopt, frenew
+            Print *, abund(k), fjk(k, j, ll), xmuene
+            Print *, k, j, ll, xnk, occ1(k, j, ll)
+            Stop ' error in occ.num of highest ion'
+          End If
+          iz = j - 1
+          gf = gffnlte(iz, ll, kk)
+          If (gf<=0.) Then
+            Write (999, *) ' stop: error in ff gaunt-factors'
+            Stop ' error in ff gaunt-factors'
+          End If
+          opaff = opaff + gf*xnk
+        End If
+
+      End Do atom !                 atom loop
+
+      opaff1 = opaff*chiffc
+      ffopa_m(ll, kk) = opaff*chiff ! tcorr, without clf correction
+      dtffopa_m(ll, kk) = (-1.D0)*ffopa_m(ll, kk)/(2.D0*temp(ll))
+
+      opab = (opabf(kk,ll)+opaff1)/clf(ll) ! now corrected
+
+!     include line-opacities
+
+
+      nlambox = 0
+      opal = 0.
+      If (optlines) Then
+        xlam = 1.D8/freq
+        If (xlam>wavblue .And. xlam<wavred) Then
+          nlambox = 1 + log(xlam/wavblue)/wavcon
+
+          If (nlambox>=nlam) Then
+            Write (999, *) ' stop: error in nwavbox'
+            Stop ' error in nwavbox'
+          End If
+          If (optstark) Then
+!           approximate opacities redwards from jump by Stark-broadened data
+!           not affected by changes in V7.2.3
+            If (nlambox==nlambox_ly-1 .And. xlam>=lam_ly) nlambox = nlambox_ly
+          End If
+
+          opal = opalgrid(nlambox, ll) ! already corrected (from OPACITL)
+          opacg = opacgrid(nlambox, ll) ! should be corrected (check)!!!
+!         REMEMBER -- opalgrid uses MEAN quantities
+          opa_eff_rat(ll, kk) = opa_eff_grid(nlambox, ll)
+        End If
+      Else
+      End If
+
+!     if(.not.optthick.and.abs(opa_eff_rat(ll,kk)-1.d0).gt.epsi) then
+      If (.Not. optthick .And. abs(opa_eff_rat(ll,kk)-1.D0)>1.D-3) Then
+        Print *, ll, kk, opa_eff_rat(ll, kk) - 1.D0
+!       print*,abs(opa_eff_rat(ll,kk)-1.d0),epsi
+!       stop ' optically thin clumping and opa_eff_rat ne 1 in opacitm'
+      End If
+!     this is a good test, since also in thin clumping opa_eff_grid is
+!     calculated in sumopal. Test proves appropriate averaging
+
+!     always
+      opat_m_nolines(ll, kk) = opab
+      opab = opab + opal
+      opat_m_new(ll, kk) = opab
+
+!     here is where opa_eff_rat = opa_eff/<opa_tot>
+!     is checked and finally transferred to nlte.f90
+!     NOTE -- In case we're OUTSIDE the range wavblue,wavred,
+!     opa_eff_rat is calculated in opacitc.
+      If (opa_eff_rat(ll,kk)>epsi1 .Or. opa_eff_rat(ll,kk)<=0.D0) Then
+        Write (999, *) ll, kk, opa_eff_rat(ll, kk), xlam
+        Write (999, *) opat_m_new(ll, kk), opal, opacg
+        Write (999, *) nlambox, opab, opa_eff_grid(nlambox, ll)
+        Write (999, *) calcopal(nlambox)
+        Write (999, *) ' stop: opa_eff_rat(ll,kk) out of bounds, opacitm_1'
+        Print *, ll, kk, opa_eff_rat(ll, kk), xlam
+        Print *, opat_m_new(ll, kk), opal, opacg
+        Print *, nlambox, opab, opa_eff_grid(nlambox, ll)
+        Print *, calcopal(nlambox)
+        Stop 'opa_eff_rat(ll,kk) out of bounds, opacitm_1'
+      End If
+!     now effective opacity transfered
+!     as discussed, we DON'T do anything with emissivities and opacities here,
+!     since always mean values required (except for opac and related
+!     quantities)
+      If (opteta) Then
+
+!       old version
+!       if(ehnuekt(kk,ll) .ne. 0.d0) then
+!       new, JO Nov. 2025
+        x = hkl*fre(kk)/temp(ll)
+        If (x<200.D0) Then
+          etab = ehnuekt(kk, ll)*hcfre3(kk)*(etabf(kk,ll)+opaff*etaffc)
+          etab = etab/clf(ll) !     now corrected
+!         JO: check for correction
+          etat_m_nolines(ll, kk) = etab
+          bn = hcfre3(kk)/(1.D0/ehnuekt(kk,ll)-1.D0)
+        Else
+!         high energies
+!         JO: commented out, since modified
+!         x=hkl*fre(kk)/temp(ll)
+!         if(x.lt.200.d0) then
+!         write(999,*) ' stop: opacitm: problem at high energies'
+!         stop ' opacitm: problem at high energies'
+!         endif
+          expo = log(hcfre3(kk)*(etabf(kk,ll)+opaff*etaffc)) - x
+          etab = exp(expo)
+          etab = etab/clf(ll) !     now corrected
+!         JO: check for correction
+          etat_m_nolines(ll, kk) = etab
+
+          expo = log(hcfre3(kk)) - x
+          bn = exp(expo)
+        End If
+
+!       check for LTE in metals
+!       lw=lwion ! for selected and non-selected elements; original version
+!       for tests: marginal influence, deteroriates convergence
+        lw = lwion1 !               for selected and non-selected elements:
+        If (lteopt .Or. ll>=lw) Then ! opab should never be zero
+!         (minimum is ff-contrib)
+          If (nlambox/=0) Then
+!           include lines
+            slinel = bn
+            etab = etab + opal*slinel ! since
+!           (<opal>+opac)*(<fth>+<fnth>)=<opal>
+            thomson_lines(ll, kk) = 0.
+          Else
+            If (thomson_lines(ll,kk)/=0.) Then
+!             stop ' LTE, no lines and Thomson ne 0'
+              thomson_lines(ll, kk) = 0.
+            End If
+          End If
+          bn1 = etab/opab
+          If (abs(1.D0-bn1/bn)>precis) Then
+!           print*,'!warning!',abs(1.d0-bn1/bn)
+!           stop ' error in lte -- opacitm!!!'
+          End If
+        Else
+          If (nlambox/=0) Then
+!           include lines
+            slinel = fracth(nlambox, ll)*bn
+            etab = etab + (opal+opacg)*slinel
+            thomson_lines(ll, kk) = (opal+opacg)*fracnth(nlambox, ll) ! corrected,
+!           since
+!           OPAL
+!           corrected
+          Else
+            If (thomson_lines(ll,kk)/=0.) Then
+!             stop ' NLTE, no lines and Thomson ne 0'
+              thomson_lines(ll, kk) = 0.
+            End If
+          End If
+        End If
+!       if(opal.ne.0) then
+!       print*,kk,nlambox,xlam,ll,lwion,thomson_lines(ll,kk)/opal
+!       else
+!       print*,kk,nlambox,xlam,ll,lwion,thomson_lines(ll,kk),'opal=0'
+!       endif
+
+        strue_m_new(ll, kk) = etab/opab
+!       if (strue_m_new(ll,kk).eq.0.) stop ' strue_metall = 0!'
+      End If
+    End Do !                        freq-loop
+  End Do !                          depth-loop
+
+  Return
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine trad(nd, temp, dilfac1, xne, clf, iit, optcmf, lastlte)
+
+  Use :: nlte_type
+  Use :: fund_const, Only: hkl, hc2, pi, hk, akb
+  Use :: nlte_dim
+
+  Use :: fastwind_params, Only: fracmin
+
+  Use :: nlte_var, Only: fre, ifre, tradj, tradj1, xj, xnelte, alo, opac, &
+    metals_converged, lwion1, optcmf_all, no_check
+  Use :: nlte_app, Only: lwion, nrec, ielev, opametinf, indexopa, indexfrec, &
+    kel, iel, gstat, abund, alphamet, fjk, occng, occ1, occnglte, occ1lte, &
+    zeta, deltatradj, xion, zcorr, alpha, ergion, jatom_full
+  Use :: nlte_lines, Only: nochange_in_metals, metconv1
+
+  Use :: tcorr_var, Only: enatcor, opttcor, temp_converged, qrbfr_m, qrbfi_m, &
+    dtqrbfr_m, dtqrbfi_m
+
+  Use :: nlte_opt, Only: opttcor_simple
+
+  Use :: nlte_porvor, Only: opa_eff_rat_old, conv_eff_opa_rat
+
+  Implicit None
+
+
+! calculates trad from jnue and "ALO"(-> DELTATRADJ) for approx. NLTE
+! clumping included.
+
+! for selected elements (jatom_full=1), deltatradj = 1 always
+
+! for non-selected elements, old approach (ground-state ioniz. only)
+
+! note: in case of optcmf_all, alo=0. for cmf-range
+
+! .. parameters ..
+  Integer (i4b), Parameter :: nd1 = id_ndept
+  Integer (i4b), Parameter :: ifretot = id_frec1
+
+! ..
+
+! .. scalar arguments ..
+  Integer (i4b), Intent (In) :: nd, iit
+  Logical :: start, optcmf, lastlte
+
+! .. array arguments ..
+  Real (dp), Intent (In) :: temp(nd), dilfac1(nd), xne(nd), clf(nd)
+! ..
+  Integer (i4b) :: j, k, kk, index, lev, ll, n, number
+! ..
+! .. local arrays ..
+  Real (dp), Dimension (ifretot, nd1) :: ehnuekt
+  Real (dp), Dimension (nd1) :: aux, xnerat
+
+  Real (dp) :: xlambda, freq, gs, alphai, xni, xnk, xnistar, depart, opabf, &
+    opa, beta, diff1, tradold, tempnd, err, fac, betaalo1, kh, edge, const, &
+    xi, te, xil, xel, x3, x4, x6, err1
+
+  Data start/.True./
+
+  tempnd = temp(nd)
+
+  Do k = 1, ifre
+    xlambda = 1./fre(k)
+    aux = xj(:, k)/dilfac1
+
+!   for excited levels
+
+    tradj(:, k) = hkl*fre(k)/(log(hc2/xlambda**3/aux+1.D0))
+
+!   for ground states
+
+    tradj1(:, k) = hkl*fre(k)/(log(hc2/xlambda**3/xj(:,k)+1.D0))
+
+
+!   for test (trad=teff)
+!   do ll=1,lwion-1
+!   tradj(ll,k)=teff
+!   aux(ll)=dilfac1(ll)*bnue(xlambda*1.d8,teff)
+!   tradj1(ll,k) = hkl*fre(k)/ (log(hc2/xlambda**3/aux(ll)+1.d0))
+!   enddo
+  End Do
+
+! check for thermalization
+  err = 0.
+  Do k = 1, ifre
+    err = max(err, abs(1.-tradj(nd,k)/tempnd))
+!   print*,k,1.d8/fre(k),tradj(nd,k),tempnd
+    If (1.D8/fre(k)>20.D0) err1 = err
+  End Do
+  Print *
+  Print *, 'MAX. ERROR BETWEEN TRAD(ND,K) AND TEMP(ND) = ', err
+  Print *, 'MAX. ERROR FOR LAMBDA > 20 A               = ', err1
+  Print *
+
+! JO no check immediately after update of hydro-structure: at this point,
+! certain inconsistencies present.
+
+  If (.Not. optcmf_all) Then
+    If (.Not. no_check .And. err1>0.01D0) Then
+      Write (999, *) ' stop: something wrong with thermalization'
+      Stop ' something wrong with thermalization'
+    End If
+!   JO Sept. 2019: for iteration with moments equations, the above condition
+!   is sometimes too weak; thus
+  Else
+    If (.Not. no_check .And. err1>0.05D0) Then
+      Write (999, *) ' stop: something wrong with thermalization'
+      Stop ' something wrong with thermalization'
+    End If
+  End If
+
+! for iteration zero or 1 iteration after restart
+  If (start) Then
+    Print *, 'iteration zero or 1st iteration after restart: deltatradj = 1!'
+    Print *
+    start = .False.
+    If (deltatradj(1,1,1)/=1.) Then
+      Write (999, *) ' stop: something wrong in deltatradj'
+      Stop ' something wrong in deltatradj'
+    End If
+    Return
+  End If
+
+! if (tcorr and previous LTE solution)
+  If (lastlte) Then
+    Print *, '1st iteration after LTE update: deltatradj = 1!'
+    Print *
+    deltatradj = 1.
+!   JO Oct. 2023: inclusion of next 3 statements
+    If (metals_converged) Then
+      Write (999, *) ' stop: metals_converged erroneously set to T'
+      Stop ' metals_converged erroneously set to T'
+    End If
+    nochange_in_metals = .False.
+    Print *, 'metals_converged,nochange_in_metals', metals_converged, &
+      nochange_in_metals
+    Return
+  End If
+
+! calculation of "new" radiation temperature for the ALI-method of metals
+
+  deltatradj = 1.
+
+  xnerat = xne/xnelte
+
+  Do kk = 1, ifre
+    freq = fre(kk)
+    Do ll = 1, nd
+      ehnuekt(kk, ll) = exp(-hkl*freq/temp(ll))
+    End Do
+  End Do
+
+! convergence of metals allowed only if lines treated
+
+  metals_converged = .False.
+  nochange_in_metals = .True.
+
+! if(.not.optcmf.and.iit.ge.12.and.emax.lt.0.03) metals_converged = .true.
+! if(     optcmf.and.iit.ge.22.and.emax.lt.0.03) metals_converged = .true.
+! allow convergence even if explicit ions oscillate
+  If (.Not. optcmf .And. iit>=12) metals_converged = .True.
+  If (optcmf .And. iit>=22) metals_converged = .True.
+
+! hack for specific NO-tests
+! metals_converged = .false.
+! nochange_in_metals=.false.
+
+! to allow convergence, tcorr has to be converged
+  If (enatcor .And. .Not. temp_converged) metals_converged = .False.
+! NOTE - additional constraint from conv_opa_eff_rat
+  If (conv_eff_opa_rat>0.01) metals_converged = .False.
+
+rec: Do n = 1, nrec
+
+!   only ground-state considered
+
+    lev = 1
+    number = opametinf(n, lev)
+    If (number==0) Cycle rec
+    index = indexopa(n, lev)
+    If (index==0.) Cycle rec !      eq.0 for edges larger than max(fre)
+
+    k = kel(n)
+    j = iel(n)
+    If (jatom_full(k)==1) Then
+!     ensure that
+      If (deltatradj(k,j,lwion1-1)/=1.D0) Then
+        Write (999, *) ' stop: deltatradj ne 1 for selected elements'
+        Stop ' deltatradj ne 1 for selected elements'
+      End If
+      Cycle rec
+    End If
+!   once more, check consistency
+    If (index/=indexfrec(k,j)) Then
+      Write (999, *) ' stop: inconsistency in ground-state indices'
+      Stop ' inconsistency in ground-state indices'
+    End If
+
+    gs = gstat(k, j, lev)
+
+    kk = index
+    alphai = alphamet(number, kk)
+    If (alphai==0.D0) Then
+      Write (999, *) ' stop: error in alphamet'
+      Stop ' error in alphamet'
+    End If
+
+depth: Do ll = 1, lwion - 1
+      If (alo(ll,kk)<0.1) Cycle depth
+      If (abund(k)*fjk(k,j,ll)<fracmin) Cycle depth
+      xni = occng(n, lev, ll)*gs
+      xnk = occ1(k, j+1, ll) !      includes stat. weight
+      xnistar = xnk*occnglte(n, lev, ll)*gs/occ1lte(k, j+1, ll)*xnerat(ll)
+      depart = xni/xnistar
+!     print*,'yyy',k,j,ll,depart,zcorr(k,j,ll)
+      opabf = xnistar*alphai*(depart-ehnuekt(kk,ll))*opa_eff_rat_old(ll, kk)/ &
+        clf(ll) !                   corrected
+      opa = opac(ll, kk) !          already corrected
+!     opac should be EFFECTIVE from previous iteration,
+!     thus corrected below with opa_eff_ratio to get correct ratio bf to opac
+      beta = opabf/opa
+      If (beta>1.D0) Then
+        Write (999, *) ' stop: beta > 1 in Trad'
+        Stop ' beta > 1 in Trad'
+      End If
+!     corrected
+
+!     old version
+!     tradold=tradj(ll,kk)
+!     diff1=1.-beta*alo(ll,kk)/(depart*dilfac1(ll)*zcorr(k,j,ll))* &
+!     &       temp(ll)/tradold* &
+!     &       exp(-xion(k,j)*hkl*(1./temp(ll)-1./tradold))
+
+!     new version(without W)
+      tradold = tradj1(ll, kk)
+      fac = zeta(k, j)/(zcorr(k,j,ll)*depart)*temp(ll)/tradold* &
+        exp(-xion(k,j)*hkl*(1./temp(ll)-1./tradold))
+      betaalo1 = 1. - beta*alo(ll, kk)*zeta(k, j)
+      diff1 = 1. - beta*alo(ll, kk)*fac
+
+      If (diff1<0.) Then
+        Write (999, *) ' warning, diff1 < 0, check output-file'
+        Print *, ' warning, diff1 < 0'
+!       check precision
+!       if Lambda * beta close to unity, large correction induced if
+!       fac (=rest/depart) deviates only slightly from unity. To avoid this
+!       problem, &
+!       we check accuracy of fac and compare it to precision
+!       (0.01/(1-Lambda*beta)
+
+      Else If (beta>0.9 .And. abs(1.-fac)<0.01/betaalo1) Then
+        deltatradj(k, j, ll) = 1.
+        Write (*, 120) k, j, 1.D8/fre(kk), ll, beta, tradold
+!       print*,temp(ll),depart,zcorr(k,j,ll),zeta(k,j),alo(ll,kk)
+      Else
+        deltatradj(k, j, ll) = diff1/betaalo1
+      End If
+
+      If (deltatradj(k,j,ll)<0.8 .Or. deltatradj(k,j,ll)>1.2) Then
+        deltatradj(k, j, ll) = 1.
+        metals_converged = .False.
+        nochange_in_metals = .False.
+        Write (*, 110) k, j, 1.D8/fre(kk), ll, beta, tradold
+!       print*,temp(ll),depart,zcorr(k,j,ll),zeta(k,j),alo(ll,kk)
+      End If
+      If (deltatradj(k,j,ll)<0.99 .Or. deltatradj(k,j,ll)>1.01) Then
+        metals_converged = .False.
+        nochange_in_metals = .False.
+        Write (*, 100) k, j, 1.D8/fre(kk), ll, beta, tradold, &
+          deltatradj(k, j, ll)
+!       print*,temp(ll),depart,zcorr(k,j,ll),zeta(k,j),alo(ll,kk)
+      End If
+
+!     for tests
+!     write(*,200) k,j,1.d8/fre(kk),ll,beta,tradold,deltatradj(k,j,ll)
+!     print*,temp(ll),depart,zcorr(k,j,ll),zeta(k,j),alo(ll,kk)
+!     print*,xni,xnk,xnistar,opabf,opa
+!     print*
+    End Do depth
+
+  End Do rec
+
+! specific metals have to be converged in any case
+  If (.Not. metconv1) Then
+    metals_converged = .False.
+    nochange_in_metals = .False.
+  End If
+
+  Print *, 'metals_converged,nochange_in_metals', metals_converged, &
+    nochange_in_metals
+
+  If (metals_converged) Then
+    Write (999, *)
+    Write (999, *) ' METALS CONVERGED !'
+    Write (999, *)
+    Print *
+    Print *, ' METALS CONVERGED !'
+    Print *
+  End If
+
+  If (.Not. opttcor) Return
+  If (.Not. opttcor_simple) Return
+  nochange_in_metals = .False. !    (update cbb cooling/heating)
+
+
+! Heating/cooling rates for elements in approx NLTE; (beta=1, s=2 assummed)
+! => Qik = kTrad Rik, Qki= kTe Rki
+! no special treatment for clumping required
+  qrbfr_m = 0.D0
+  qrbfi_m = 0.D0
+  dtqrbfr_m = 0.D0
+  dtqrbfi_m = 0.D0
+
+  kh = 1./hk
+rec1: Do n = 1, nrec
+
+level1: Do lev = 1, ielev(n)
+      number = opametinf(n, lev)
+      If (number==0) Cycle level1
+      index = indexopa(n, lev)
+      If (index==0) Cycle level1 !  eq.0 for edges larger than max(fre)
+
+      k = kel(n)
+      j = iel(n)
+
+      gs = gstat(k, j, lev)
+
+      alphai = alpha(n, lev)*1.D-18
+      edge = xion(k, j) - ergion(k, j, lev)
+
+      const = 8.D0*pi*edge**2*alphai*kh*akb ! 8pi alpha (nu_i/c)^2 * k/h * k
+      xi = hkl*edge !               (hnu_i/k)
+
+!     if(k.eq.6.and.j.eq.4) print*,'civ',edge,fre(index),alphai
+depth1: Do ll = 1, nd1
+
+        If (abund(k)*fjk(k,j,ll)<fracmin) Cycle depth1
+
+        tradold = tradj(ll, index)
+        te = temp(ll)
+        xil = xi/tradold !          hnu_i/(kTrad)
+        xel = xi/te !               hnu_i/(kTe)
+        x3 = const*tradold*exp(-xil)*tradold*dilfac1(ll)
+        x4 = const*te*exp(-xel)*te
+        x6 = x4/te*(2.D0+xel) !     dx4/dT
+
+!       cf subroutine NETMAT, after call of INTERMEPHO
+        xni = occng(n, lev, ll)*gs
+        xnk = occ1(k, j+1, ll) !    includes stat. weight
+        xnistar = xnk*occnglte(n, lev, ll)*gs/occ1lte(k, j+1, ll)*xnerat(ll)
+!       if(k.eq.6.and.j.eq.4) print*,'civ',ll,x3,x4,xni,xnistar
+        qrbfr_m(ll) = qrbfr_m(ll) + xnistar*x4
+        qrbfi_m(ll) = qrbfi_m(ll) + xni*x3
+        dtqrbfr_m(ll) = dtqrbfr_m(ll) + xnistar*(x6-x4*(1.5D0+xel)/te)
+        dtqrbfi_m(ll) = dtqrbfi_m(ll) - xni*x3*(1.5D0+xel)/te
+      End Do depth1
+
+    End Do level1
+  End Do rec1
+  Print *, ' TCORR IN TRAD DONE'
+  Return
+
+100 Format (2(I2,1X), F10.5, 1X, I2, F10.5, 1X, F10.0, 1X, F10.5, 1X, &
+    'precision1')
+110 Format (2(I2,1X), F10.5, 1X, I2, F10.5, 1X, F10.0, 1X, 'no corr')
+120 Format (2(I2,1X), F10.5, 1X, I2, F10.5, 1X, F10.0, 1X, 'precision')
+
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine restart(nd, xne, dilfac1, optmet, ilow, imax)
+
+  Use :: nlte_type
+  Use :: nlte_dim
+
+  Use :: nlte_opt, Only: optcmf_full
+  Use :: fastwind_params, Only: natom, nion
+
+  Use :: nlte_xrays, Only: optxray
+
+  Use :: nlte_var, Only: modnam, opat_m_new, opat_m_nolines, strue_m_new, &
+    etat_m_nolines, thomson_lines, metals_converged, lines, optlines, fre, &
+    ifre, abund_have_changed, optcmf_all
+  Use :: nlte_app, Only: lwion, coll_therm, corr_beta, occ1old, occngold, fjk, &
+    met_imin, met_imax, occng, occnglte, occngdummy, jatom_full, indrec
+  Use :: tcorr_var, Only: enatcor
+  Use :: nlte_porvor, Only: epsi1, opa_eff_rat
+
+  Implicit None
+
+! .. parameters ..
+  Integer (i4b), Parameter :: nd1 = id_ndept
+
+! .. scalar arguments ..
+  Integer (i4b) :: nd
+
+! .. array arguments ..
+  Real (dp) :: xne(nd), dilfac1(nd)
+  Integer (i4b) :: ilow(nd, id_atoms), imax(nd, id_atoms)
+
+  Real (dp), Dimension (:), Allocatable :: freold
+  Real (dp), Dimension (:, :), Allocatable :: aux1, aux2, aux3, aux4, aux5, &
+    aux6
+
+  Logical :: optmet
+
+  Integer (i4b) :: i, ifreold, ks, k, j, irec
+  Real (dp) :: frelast, q, q1, prec
+
+  Call copyocc(xne, nd)
+
+  If (.Not. optmet) Return
+
+  If (lines) optlines = .True.
+
+  Open (1, Err=150, File=trim(modnam)//'/METAL_RESTART', Status='unknown', &
+    Form='unformatted')
+
+  Rewind 1
+! changed from version 7.4 on (old models can no longer be read)
+! namely opa_eff_rat included
+! etat_m_nolines added from version 8.0 on
+  Read (1, End=150) opat_m_new, opat_m_nolines, strue_m_new, etat_m_nolines, &
+    thomson_lines, opa_eff_rat
+! changed from version 6.1 on. Old models without fjk can still be read
+  Read (1, Err=100) coll_therm, corr_beta, occ1old, occngold, fjk
+  Go To 110
+100 Print *, ' PREVIOUS MODEL DID NOT CONTAIN FJK(METALS,NLTE)'
+  Print *, ' FJK(LTE) USED INSTEAD. ILOW, IMAX MIGHT CHANGE!'
+
+110 Continue
+
+! newly introduced to allow for cmf_all
+  Call neglect_ions
+
+  Read (1, End=150) metals_converged, ifreold, frelast
+
+  Print *, ' METAL_INFO FROM PREVIOUS RUN READ SUCCESSFULLY'
+  Print *
+  Print *, ' METALS_CONVERGED (old model) = ', metals_converged
+  Print *
+
+  If (enatcor) metals_converged = .False.
+! uncomment for tests
+! metals_converged = .true.
+! metals_converged = .false.
+! from v7.1 on
+  If (abund_have_changed) Then
+    Print *, &
+      ' SIGNIFICANT CHANGE OF ABUNDANCE, METALLIC BACKGROUND RECALCULATED '
+    metals_converged = .False.
+!   JO Oct. 2025: required only at first restart (and not at each temperature
+!   correction), reset
+    abund_have_changed = .False.
+  End If
+
+  Do i = 1, nd
+    If (dilfac1(i)==1.) Then
+      lwion = i
+      Exit
+    End If
+  End Do
+
+  If (ifre/=ifreold .Or. frelast/=fre(ifre)) Then
+!   frequency grid has changed, interpolation necessary
+    Print *, ' NEW FREQUENCY GRID, INTERPOLATION REQUIRED'
+    Print *
+    Allocate (freold(ifreold))
+    Read (1, End=150) freold
+    If (freold(1)/=fre(1)) Then
+      Write (999, *) ' stop: RESTART: error in first frequency'
+      Stop ' RESTART: error in first frequency'
+    End If
+
+    Allocate (aux1(nd1,ifre), aux2(nd1,ifre), aux3(nd1,ifre), aux4(nd1,ifre), &
+      aux5(nd1,ifre), aux6(nd1,ifre))
+
+    ks = 1
+    Do k = 2, ifre
+      Do i = ks, ifreold - 1
+        If (fre(k)>=freold(i) .And. fre(k)<=freold(i+1)) Go To 120
+      End Do
+      If (fre(k)>frelast) Go To 120 ! extrapolation necessary
+      Write (999, *) ' stop: fre(k) not found in freold'
+      Stop ' fre(k) not found in freold'
+
+120   ks = i
+      If (ks==ifreold) ks = ks - 1 ! for extrapolation
+      q = log10(fre(k)/freold(ks+1))/log10(freold(ks)/freold(ks+1))
+      q1 = 1.D0 - q
+
+      aux1(:, k) = q*log10(opat_m_new(:,ks)) + q1*log10(opat_m_new(:,ks+1))
+      aux2(:, k) = q*log10(opat_m_nolines(:,ks)) + q1*log10(opat_m_nolines(:, &
+        ks+1))
+
+      Where (strue_m_new(:,ks)==0. .Or. strue_m_new(:,ks+1)==0.)
+        aux3(:, k) = 0.
+      Elsewhere
+        aux3(:, k) = q*log10(strue_m_new(:,ks)) + q1*log10(strue_m_new(:,ks+1) &
+          )
+      End Where
+
+      Where (thomson_lines(:,ks)==0. .Or. thomson_lines(:,ks+1)==0.)
+        aux4(:, k) = 0.
+      Elsewhere
+        aux4(:, k) = q*log10(thomson_lines(:,ks)) + q1*log10(thomson_lines(:, &
+          ks+1))
+      End Where
+!     porosity
+      aux5(:, k) = q*log10(opa_eff_rat(:,ks)) + q1*log10(opa_eff_rat(:,ks+1))
+      aux6(:, k) = q*log10(etat_m_nolines(:,ks)) + q1*log10(etat_m_nolines(:, &
+        ks+1))
+
+    End Do
+
+    opat_m_new(:, 2:ifre) = 10.D0**aux1(:, 2:ifre) ! k=1 identical
+    opat_m_nolines(:, 2:ifre) = 10.D0**aux2(:, 2:ifre)
+    etat_m_nolines(:, 2:ifre) = 10.D0**aux6(:, 2:ifre)
+!   porosity
+    opa_eff_rat(:, 2:ifre) = 10.D0**aux5(:, 2:ifre)
+
+    If (maxval(opa_eff_rat(:,2:ifre))>epsi1 .Or. minval(opa_eff_rat(:, &
+      2:ifre))<=0.D0) Then
+      Write (999, *) maxval(opa_eff_rat(:,2:ifre)), minval(opa_eff_rat(:,2: &
+        ifre))
+      Write (999, *) &
+        ' stop: opa_eff_rat interpolation out of bounds at restart'
+      Print *, maxval(opa_eff_rat(:,2:ifre)), minval(opa_eff_rat(:,2:ifre))
+      Stop 'opa_eff_rat interpolation out of bounds at restart'
+    End If
+!   --------------------------------
+
+    Where (aux3(:,2:ifre)/=0.)
+      strue_m_new(:, 2:ifre) = 10.D0**aux3(:, 2:ifre)
+    End Where
+
+    Where (aux4(:,2:ifre)/=0.)
+      thomson_lines(:, 2:ifre) = 10.D0**aux4(:, 2:ifre)
+    End Where
+
+    Deallocate (freold, aux1, aux2, aux3, aux4, aux5, aux6)
+
+  End If
+
+  Close (1)
+
+! JO: April 2018
+! in case, read met_imin, met_imax, to have info already at restart
+! (before select is called)
+  If (optcmf_full) Then
+
+    If (.Not. optcmf_all) Then
+      Open (1, Err=130, File=trim(modnam)//'/OCCNG', Status='old', &
+        Form='unformatted')
+      Rewind (1)
+      Read (1) met_imin, met_imax
+      Close (1)
+      Print *
+      Print *, ' met_imin, met_imax read in from previous iteration (OCCNG)'
+      Print *
+      Go To 140
+    Else
+!     JO Dec. 2020: changes regarding occng for approximate elements after
+!     update
+!     of T-struct. and calculation of corresponding lte occup. numbers
+      Open (1, Err=130, File=trim(modnam)//'/OCCNG', Status='old', &
+        Form='unformatted')
+      Rewind (1)
+      Read (1) met_imin, met_imax, occngdummy
+      Close (1)
+      Print *
+      Print *, &
+        ' met_imin, met_imax, occng read in from previous iteration (OCCNG)'
+      Print *
+
+!     for tests (don't forget to declare occngnlte)
+!     prec=abs(maxval(occngnlte-occngdummy))
+!     print*,' max. dev between occng from OCCNG and occngnlte = ',prec
+!     if(abs(prec).gt.1.d-16) stop 'occng from OCCNG and occngnlte different'
+
+      prec = abs(maxval(occnglte-occng))
+!     print*,' max. dev between current occng and occnglte = ',prec
+      If (abs(prec)>1.D-16) Then
+        Write (999, *) ' stop: current occng and occnglte different'
+        Stop 'current occng and occnglte different'
+      End If
+      Print *
+!     for approximate elements, overwrite outer region of occng (until here,
+!     in LTE) by occng(NLTE) from previous iteration
+
+      Do k = 1, natom
+        If (jatom_full(k)/=1) Then
+          Do j = 1, nion
+            irec = indrec(k, j)
+            occng(irec, :, 1:lwion-1) = occngdummy(irec, :, 1:lwion-1)
+          End Do
+          Print *, ' approx. bg element ', k, &
+            ' : occng updated in outer region'
+        End If
+      End Do
+
+      Go To 140
+    End If
+  End If
+
+! in case that OPTXRAY is present, and/or OCCNG does not exist
+! (first iterations, or OPTCMF_FULL = .FALSE.),
+! we obtain MET_IMIN and MET_IMAX from sub. SELECT
+130 Continue !                      this point can be only reached for
+! OPTCMF_FULL = .FALSE. or
+! when OCCNG does not exists
+
+  If (optxray) Call select(.False.)
+! might need to be checked at "ALMOST_CONVERGED" to prevent problems with
+! Ng acceleration
+
+! NOTE: Here, in contrast to standard approach, subr. select works
+! works on mixed ionization fractions:
+! ilow to imax from 'exact', rest from approx. method.
+! This might lead to certain inconsistencies after restart.
+
+140 Continue
+
+  Return
+
+
+150 Write (999, *) &
+    ' stop: ERROR IN READING FILE METAL_RESTART -- check DIMENSIONS!'
+  Stop ' ERROR IN READING FILE METAL_RESTART -- check DIMENSIONS!'
+
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine save_metal_info
+
+! changed from version 5.4 on.
+! freq. grid required to allow for interpolations if freq. grid has changed
+! (approx.) nlte numbers required to allow for smooth restart (needed for
+! betas)
+! deltatradj no longer required, since always calculated
+
+  Use :: nlte_type
+  Use :: nlte_dim
+  Use :: nlte_opt, Only: optcmf_full
+  Use :: nlte_var, Only: modnam, opat_m_new, opat_m_nolines, strue_m_new, &
+    etat_m_nolines, thomson_lines, metals_converged, almost_converged, fre, &
+    ifre
+  Use :: nlte_app, Only: coll_therm, corr_beta, occ1old, occngold, fjk, &
+    met_imin, met_imax, occng, jatom_full
+  Use :: nlte_porvor, Only: opa_eff_rat
+
+  Implicit None
+
+  Open (1, File=trim(modnam)//'/METAL_RESTART', Status='UNKNOWN', &
+    Form='UNFORMATTED')
+
+  Rewind 1
+
+! opa_eff_rat(new) added from version 7.4 on
+! NOTE: opa_eff_rat is saved (rather than opa_eff_rat_old), since
+! first call after restart (where save_metal_info is used) is to
+! OPACITC, where the outside range becomes updated
+! -------------------------------------------------
+! etat_m_nolines added from version 8.0 on
+  Write (1) opat_m_new, opat_m_nolines, strue_m_new, etat_m_nolines, &
+    thomson_lines, opa_eff_rat
+
+! fjk added from version 6.1 on
+  Write (1) coll_therm, corr_beta, occ1old, occngold, fjk
+  Write (1) metals_converged, ifre, fre(ifre)
+  Write (1) fre
+
+  Close (1)
+
+! added Jan. 2015 (v8.0), info required for restart/cmf_all
+! and for formal (jatom_full)
+  If (optcmf_full) Then
+    Open (1, File=trim(modnam)//'/OCCNG', Status='unknown', &
+      Form='unformatted')
+    Rewind (1)
+    Write (1) met_imin, met_imax, occng
+    Write (1) almost_converged, jatom_full
+    Close (1)
+    Print *, ' OCCNG written in subr. SAVE_METAL_INFO'
+  End If
+
+  Print *, ' subr. SAVE_METAL_INFO successfully called'
+
+  Return
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine save_add_freq_points
+
+! added from version 7.5.2 on. Add. freq. points evaluated in
+! subr. sumopal_nlte. Saved after last iteration. This file is deleted
+! when model starts at iteration 0
+  Use :: nlte_type
+  Use :: nlte_dim
+  Use :: nlte_var, Only: modnam, nstarkmax, nstark, wavestark
+
+  Integer (i4b) :: i
+
+  If (nstark<=0) Then
+    Write (999, *) &
+      ' stop: subroutine save_add_freq_points called without reason'
+    Stop ' subroutine save_add_freq_points called without reason'
+  End If
+
+  If (nstark>nstarkmax) Then
+    Write (999, *) ' stop: nstark > nstarkmax in save_add_freq_points'
+    Stop 'nstark > nstarkmax in save_add_freq_points'
+  End If
+
+  Open (1, File=trim(modnam)//'/ADD_FREQUENCIES', Status='UNKNOWN', &
+    Form='FORMATTED')
+
+  Rewind 1
+  Write (1, *) nstark
+  Do i = 1, nstark
+    Write (1, *) wavestark(i)
+  End Do
+
+! print*
+! print*,nstark,' add. freq. points written to file ADD_FREQUENCIES'
+! print*
+
+  Close (1)
+  Return
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+!PACKAGE FOR APPROXIMATE LINE TRANSFER
+
+!-----------------------------------------------------------------------
+
+Subroutine fgrid_lines(teff)
+
+  Use :: nlte_type
+  Use :: nlte_dim, Only: id_ndept
+  Use :: fund_const, Only: akb, amh, clight
+
+  Use :: fastwind_params, Only: sample_width ! (should be 120)
+
+  Use :: nlte_var, Only: fre
+
+  Use :: nlte_app, Only: xion, vth, vth8
+
+  Use :: nlte_lines, Only: wavblue, wavred, wavcon, wavcon1, nsubinter, &
+    nsubinter_frac3, nsubinter_half, nlam, calcopal, calcopal1, fgrid, &
+    opacgrid, opalgrid, fracth, fracnth, tradj_fg, opal_aux, sum_th, sum_nth, &
+    opa_eff_aux, opa_eff_grid
+
+  Use :: nlte_porvor, Only: w_bg_red, w_bg_blue
+
+  Implicit None
+
+  Logical :: enatcor_simple = .False.
+
+  Real (dp), Intent (In) :: teff
+
+  Real (dp) :: const, const1, vth10
+  Integer (i4b) :: i
+
+! include all IR lines (costs almost nothing)
+  wavred = 0.95D8/fre(1)
+
+  If (teff<=10000.) Then
+    wavblue = 248.D0
+
+  Else If (teff<=20000.) Then
+!   He2 edge (229 A)
+    wavblue = 1.D8/xion(2, 2)
+
+!   -------------------------------------------------------------------------
+!   else if (teff <= 30000.) then
+!   He2 edge (229 A)
+!   wavblue=1.d8/xion(2,2)
+!   that was the old version (until 5.x)
+!   else if (teff <= 37000.) then
+!   He2 edge (229 A)
+!   wavblue=1.d8/xion(2,2)
+
+!   else if (teff <= 43000.) then
+!   C4 edge (192 A)
+!   wavblue=1.d8/xion(6,4)
+
+!   else if (teff <= 55000.) then
+!   N4 edge (160 A)
+!   wavblue=1.d8/xion(7,4)
+
+!   else if (teff <= 70000.) then
+!   O5 edge (109 A)
+!   wavblue=1.d8/xion(8,5)
+
+!   else
+!   O6 edge (90 A)
+!   wavblue=1.d8/xion(8,6)
+!   end if
+!   -------------------------------------------------------------------------
+!   from version 6.0 on, we use the full line list for Teff ge 25000, to
+!   ensure correct fluxes also below 229 A
+  Else If (teff<25000.) Then
+!   He2 edge (229 A)
+    wavblue = 1.D8/xion(2, 2)
+
+  Else
+!   O6 edge (90 A)
+    wavblue = 1.D8/xion(8, 6) !     CHECK
+  End If
+
+! other important edges (but at the moment not used)
+! /172.43  /!Fe55-edge
+! /164.12  /!Fe51-edge
+! /154.53  /!Mg31-edge
+
+! to ensure that for each value of v_turb the same sample-width is present
+! use oxygen as average representative, with same mass as in aweight, and
+! at nominal value of vturb = 10 km/s
+
+! Sept. 2026: Moreover, to avoid discontinuities for small changes in Teff,
+! we now use a nominal Teff of 30 kK.
+
+! calculate actual number of channels (the larger vturb, the lower number of
+! channels)
+  vth10 = sqrt((2.*akb*30000./(amh*16.000D0))+10.D5**2)
+! for tests (and versions until 11.6).
+! vth10=sqrt((2.*akb*Teff/(amh*16.000d0))+10.d5**2)
+
+  nsubinter = sample_width/2*(vth10/vth(8)) ! using actual vturb
+  nsubinter_frac3 = nsubinter/3
+  nsubinter_half = nsubinter/2
+
+! Sept. 2026: changed from 10 to 5; stop should occur for vturb somewhat
+! larger than 40 km/s
+  If (nsubinter_frac3<5) Then
+    Write (999, *) nsubinter, vth10/1.D5, vth(8)/1.D5
+    Write (999, *) ' stop: nsubinter_frac3 lt 5'
+    Print *, nsubinter, vth10/1.D5, vth(8)/1.D5
+    Stop ' nsubinter_frac3 lt 5'
+  End If
+
+! renormalize vth(8) to get rid of truncation errors:
+! sample_width * vth10 =: 2 * nsubinter * vth8
+  vth8 = sample_width/2*vth10/dble(nsubinter)
+! Sept. 2026: error condition changed from 0.05 to 0.075
+  If (abs(1.-vth8/vth(8))>0.075) Then
+    Write (999, *) nsubinter, vth(8), vth8
+    Write (999, *) 'vturb most probably too large'
+    Write (999, *) ' stop: truncation error in renormalized vth(8) too large'
+    Print *, nsubinter, vth(8), vth8
+    Print *, 'vturb most probably too large'
+    Stop ' truncation error in renormalized vth(8) too large'
+  End If
+
+  const = 1.D0 + sample_width*vth10/clight ! sample width (independent of
+! vturb)
+  wavcon = log(const)
+
+! Delta nue for summation of opals, nsubinter (order sample_width/2)
+! subintervals
+  const1 = const**(1.D0/float(nsubinter))
+  wavcon1 = log(const1)
+
+  nlam = int(log(wavred/wavblue)/wavcon) + 2 ! since xlam(1)=wavblue
+
+  Allocate (fgrid(nlam))
+  Allocate (calcopal(nlam))
+  Allocate (calcopal1(nlam-1))
+  Allocate (opacgrid(nlam,id_ndept))
+  Allocate (opalgrid(nlam,id_ndept))
+  Allocate (fracth(nlam,id_ndept))
+  Allocate (fracnth(nlam,id_ndept))
+  Allocate (opal_aux(nsubinter,id_ndept,3))
+  Allocate (sum_th(nsubinter,id_ndept,3))
+  Allocate (sum_nth(nsubinter,id_ndept))
+
+  Allocate (opa_eff_aux(nsubinter,id_ndept))
+  Allocate (opa_eff_grid(nlam,id_ndept))
+
+! if (enatcor) allocate(tradj_fg(nlam,ID_NDEPT))
+  If (enatcor_simple) Allocate (tradj_fg(nlam,id_ndept))
+
+  Do i = 1, nlam
+    fgrid(i) = wavblue*const**(i-1)
+!   print*,i,fgrid(i)
+  End Do
+  wavred = fgrid(nlam) !            redefinition to avoid end-effects
+
+! variables to compute OPA_EFF_RAT outsied wavred,wavblue edges
+! within opacitc
+  w_bg_red = wavred
+  w_bg_blue = wavblue
+
+! print*,const,const1
+! print*,wavcon,wavcon1
+! print*,wavblue,wavred
+! print*,nsubinter,nlam
+
+  Return
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine open_linedat
+
+! open line files (binaries) and according info file
+
+  Use :: nlte_type
+  Use :: fastwind_params, Only: fpath1
+  Use :: nlte_lines, Only: ntotnl3, nfullrec, nrest, nbunch, id, gf, xlam, &
+    wavblue, wavred, iblue, ired
+
+  Implicit None
+  Integer (i4b) :: ios, npack, jrec, j, nlast, jrecblue
+
+! atomic transition information
+
+  Open (111, File=fpath1//'nl3i_all', Form='unformatted', Status='old', &
+    Err=100, Iostat=ios)
+  Open (112, File=fpath1//'nl3a_all', Form='unformatted', Status='old', &
+    Err=110, Iostat=ios)
+  Open (113, File=fpath1//'nl3g_all', Form='unformatted', Status='old', &
+    Err=120, Iostat=ios)
+  Open (114, File=fpath1//'nl3info_all', Status='old', Err=130, Iostat=ios)
+
+  Read (114, *) ntotnl3, nfullrec, nrest
+  Close (114)
+
+  Allocate (id(ntotnl3), gf(ntotnl3), xlam(ntotnl3))
+
+! read complete line list
+  npack = nbunch
+  jrecblue = 0
+  Do jrec = 1, nfullrec + 1
+    If (jrec==nfullrec+1) npack = nrest
+    nlast = (jrec-1)*nbunch
+    Read (111)(id(j), j=nlast+1, nlast+npack)
+    Read (112)(xlam(j), j=nlast+1, nlast+npack)
+    Read (113)(gf(j), j=nlast+1, nlast+npack)
+    If (xlam(nlast+npack)<wavblue) jrecblue = jrec
+!   print*,' lines up to',xlam(npack),'A read'
+  End Do
+
+! define iblue
+  Do j = jrecblue*nbunch + 1, (jrecblue+1)*nbunch
+    If (xlam(j)>=wavblue) Exit
+  End Do
+  iblue = j
+! print*,'ired,iblue'
+! print*,wavblue,xlam(iblue),iblue
+
+! define ired
+  Do j = ntotnl3, 1, -1
+    If (xlam(j)<=wavred) Exit
+  End Do
+  ired = j
+! print*,wavred,xlam(ired), ired
+  Return
+
+100 Write (999, *) ' error in reading file nl3i_all, iostat=', ios
+  Write (*, *) ' error in reading file nl3i_all, iostat=', ios
+  Stop
+110 Write (999, *) ' error in reading file nl3a_all, iostat=', ios
+  Write (*, *) ' error in reading file nl3a_all, iostat=', ios
+  Stop
+120 Write (999, *) ' error in reading file nl3g_all, iostat=', ios
+  Write (*, *) ' error in reading file nl3g_all, iostat=', ios
+  Stop
+130 Write (999, *) ' error in reading file nl3info_all, iostat=', ios
+  Write (*, *) ' error in reading file nl3info_all, iostat=', ios
+  Stop
+
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine neglect_ions
+
+! find ions which can be neglected
+
+  Use :: nlte_type
+  Use :: fastwind_params, Only: fracmin, natom
+
+  Use :: nlte_app, Only: abund, fjk, jatom, jmax, calcion
+
+  Implicit None
+
+  Integer (i4b) :: k, j
+  Real (dp) :: fjkmax
+
+  calcion = 0
+
+  Do k = 1, natom
+    If (jatom(k)==0) Cycle
+    Do j = 1, jmax(k)
+      fjkmax = maxval(fjk(k,j,:))
+      If (abund(k)*fjkmax>fracmin) calcion(k, j) = 1
+    End Do
+  End Do
+  Return
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine opacitl(xne, lteopt, ntemp, dvdr, vr, velo, clf, frenew)
+
+! reads line data in packets of nbunch lines and calls line opacity summation
+
+! line transfer including clumping
+! assumption: clumps small against Sobolev length!
+! method: scale all opacities with CLF^(-1), consider that cont. opacities
+! from nlte.f90 have been scaled already
+
+  Use :: nlte_type
+  Use :: nlte_dim, Only: id_ndept, id_frec1
+  Use :: fund_const, Only: sigmae, amh, hc2, pi, c_vanreg, c_forbid
+
+  Use :: nlte_var, Only: ifre, fre, opac_nolines, tradj
+
+  Use :: nlte_app, Only: te, wion, vth8
+
+  Use :: nlte_lines, Only: nbunch, nsubinter, iblue, ired, wavblue, wavred, &
+    wavcon, opacgrid, opalgrid, opal_aux, sum_th, sum_nth, fracth, fracnth, &
+    vanreg, vanreg1, nlam, calcopal, fgrid, nlamb_old, nlambox_old, tradj_fg, &
+    u0, wexp, clufac, clufac_forb, nblock, gamma_stark, xnemin, opa_eff_grid, &
+    calcopal1
+
+  Use :: tcorr_var, Only: qcbbu_m, qcbbd_m, dtqcbbu_m, dtqcbbd_m
+
+  Use :: nlte_opt, Only: opttcor_simple, optstark
+
+  Use :: nlte_porvor, Only: fic, tcl_fac_cont
+
+  Implicit None
+
+  Logical :: enatcor_simple = .False.
+
+  Integer (i4b), Intent (In) :: ntemp
+  Real (dp), Dimension (id_ndept), Intent (In) :: xne, dvdr, vr, velo, clf
+
+  Logical, Intent (In) :: lteopt, frenew
+
+  Logical :: start
+
+  Real (dp), Dimension (id_ndept) :: opath, betafac, collfac, avoigtp, tcl_arr
+
+  Integer (i4b) :: npack, j, nlinesr, nlinesm, ifreold, k, ll, nlambox, jm, &
+    jm1, nb, nb1, inemin
+
+  Integer (i4b), Save :: ifold
+  Real (dp), Dimension (id_frec1), Save :: freold
+
+  Real (dp) :: fregrid, q, q1, xlamc, velratio, diff1, diff2
+
+  Data start/.True./
+
+  If (frenew) Then
+!   calculate indexarray where line-opacities have to be calculated
+    calcopal = 0
+    Do j = 1, ifre
+
+      xlamc = 1.D8/fre(j)
+      If (xlamc>wavblue .And. xlamc<wavred) Then
+        nlambox = 1 + log(xlamc/wavblue)/wavcon
+        If (nlambox>=nlam) Then
+          Write (999, *) ' stop: error in nwavbox'
+          Stop ' error in nwavbox'
+        End If
+        calcopal(nlambox) = 1
+!       print*,'frenew=T ',j,ifre,nlambox,calcopal(nlambox)
+      End If
+    End Do
+
+!   JO June 2023: at this point, calcopal (as calculated from the current
+!   frequency grid) should be identical with calcopal1 (as calculated from
+!   the previous call to FRESCAL_EXPL_LINES)
+    Do j = 1, nlam
+      If (calcopal(j)/=calcopal1(j)) Then
+        Write (999, *) ' stop: calcopal ne calcopal1 in OPACITL'
+        Stop ' calcopal ne calcopal1 in OPACITL'
+      End If
+    End Do
+
+!   add extra boxes at box-boundaries
+    Do j = 2, nlam
+      If (calcopal(j)==1 .And. calcopal(j-1)==0) calcopal(j-1) = 2
+    End Do
+    Do j = 1, nlam - 1
+      If (calcopal(j)==1 .And. calcopal(j+1)==0) calcopal(j+1) = 2
+    End Do
+  End If
+
+  If (lteopt .And. start) Then
+!   only very first LTE iteration
+    If (ntemp/=1) Then
+      Write (999, *) ' stop: something wrong with ntemp in opacitl'
+      Stop ' something wrong with ntemp in opacitl'
+    End If
+    start = .False.
+    opath = sigmae*amh*xne/clf !    corrected
+!   so far, nothing to be done (only for start)
+    Do j = nlam - 1, 1, -1
+      opacgrid(j, :) = opath
+    End Do
+
+  Else
+
+    If (start) Then
+!     if lines only in NLTE, however not in model
+!     may only happen in case of no T-corr! can also lead to small
+!     inconsistencies
+!     if restart
+!     if (enatcor) stop ' tcorr: something wrong with start in opacitl'
+      If (enatcor_simple) Then
+        Write (999, *) ' stop: tcorr: something wrong with start in opacitl'
+        Stop ' tcorr: something wrong with start in opacitl'
+      End If
+
+      start = .False.
+      ifold = ifre
+      freold = fre
+    End If
+
+!   prepare opacities at grid centers; note, that fre(1) at low end
+
+    ifreold = 1
+    Do j = nlam - 1, 1, -1
+
+      If (calcopal(j)==0) Cycle !   only those are needed for opacities
+
+      fregrid = .5D8*(1./fgrid(j)+1./fgrid(j+1))
+
+!     use old freq. grid since opac_nolines has been calculated in this grid;
+!     if model finished, both grids will coincide, of course
+
+      Do k = ifreold, ifold - 1
+        If (fregrid>=freold(k) .And. fregrid<freold(k+1)) Go To 100
+      End Do
+
+!     extrapolation at end possible (after update of frequency grid,
+!     this can happen)
+
+!     if(fgrid(j+1).gt.1.d8/freold(ifold)) then
+!     JO July 2021: upper condition erroneous. new formulation:
+      If (fregrid>1.D8/freold(ifold)) Then
+        Print *, 'extrapolation of opac_nolines at end of old freq. grid'
+        Print *, ifreold, ifold, fregrid
+        Print *, freold(ifold-1), freold(ifold)
+        Print *, j, fgrid(j), fgrid(j+1)
+        k = ifold - 1
+        Go To 100
+      End If
+!     something wrong
+      Write (999, *) ifreold, ifold, fregrid
+      Write (999, *) freold(ifold-1), freold(ifold)
+      Write (999, *) j, fgrid(j), fgrid(j+1)
+      Write (999, *) ' stop: OPACITL: error in indices'
+      Print *, ifreold, ifold, fregrid
+      Print *, freold(ifold-1), freold(ifold)
+      Print *, j, fgrid(j), fgrid(j+1)
+!     stop statement needs to remain, in case of erroneous condition
+      Stop ' OPACITL: error in indices'
+
+100   ifreold = k
+      q = (freold(k)-fregrid)/(freold(k)-freold(k+1))
+      q1 = 1.D0 - q
+      Do ll = ntemp, id_ndept
+
+        opacgrid(j, ll) = q1*opac_nolines(ll, k) + q*opac_nolines(ll, k+1)
+!       already corrected
+        If (opacgrid(j,ll)==0.) Then
+          Write (999, *) j, ll, k, k + 1
+          Print *, j, ll, k, k + 1
+          Stop
+        End If
+!       if(ll.eq.40) &
+!       print*,j,k,opac_nolines(ll,k),opacgrid(j,ll),opac_nolines(ll,k+1)
+      End Do
+
+    End Do
+
+  End If
+
+! prepare Stark broadening
+  avoigtp = gamma_stark*xne/(2.*pi*sqrt(pi)) ! modified voigt parameter (see
+! notes)
+! excludes 2*dnue, includes additional sqrt(pi)
+
+  Do ll = 1, id_ndept
+    If (xne(ll)>=xnemin) Go To 110
+  End Do
+  Write (999, *) ' stop: xnemin not found in xne'
+  Stop ' xnemin not found in xne'
+
+110 inemin = ll
+
+! different pathes for LTE and NLTE
+! --------------------------------------------------------------------
+
+  If (.Not. lteopt) Then
+
+    Do ll = 1, id_ndept
+      velratio = velo(ll)/(2.*vth8)
+      If (velratio>nsubinter) Then
+        nblock(ll) = 1
+      Else If (velratio<1.) Then
+        nblock(ll) = nsubinter
+      Else
+        jm = velratio
+        nb = nsubinter/jm
+        nb1 = nsubinter/(jm+1)
+!       now other way round, since integer operations
+        jm = nsubinter/nb
+        jm1 = nsubinter/nb1
+        If (nsubinter-jm*nb==nsubinter-jm1*nb1) Then
+          diff1 = abs(velratio-jm)
+          diff2 = abs(velratio-jm1)
+          If (diff1<=diff2) Then
+            nblock(ll) = nb
+          Else
+            nblock(ll) = nb1
+          End If
+        Else If (nsubinter-jm*nb<nsubinter-jm1*nb1) Then
+          nblock(ll) = nb
+        Else
+          nblock(ll) = nb1
+        End If
+      End If
+!     in any case, there must be a chance that photons can escape unless the
+!     line-density is really high
+      nblock(ll) = max(nblock(ll), 4)
+    End Do
+!   NLTE path
+
+!   check, just in case
+    If (ifold/=ifre) Then
+      Write (999, *) ' stop: error in freq. grid: opacitl, nlte!'
+      Stop ' error in freq. grid: opacitl, nlte!'
+    End If
+
+!   if(opttcor) then
+    If (opttcor_simple) Then
+
+      If (optstark) Then
+        Write (999, *) ' stop: opttcor_simple = T'
+        Stop ' opttcor_simple = T'
+      End If
+!     JO Aug. 2021: complete stark-broadening approach changed.
+!     Path for opttcor_simple (obsolete) not checked.
+!     If you really need it, check whether still consistent
+
+!     check, just in case
+      If (ntemp/=1) Then
+        Write (999, *) ' stop: subr. opacitl: something wrong with ntemp'
+        Stop ' subr. opacitl: something wrong with ntemp'
+      End If
+
+!     interpolate radiation temperatures to fgrid
+      ifreold = 1
+      tradj_fg = 0.
+
+      Do j = nlam, 1, -1
+
+        fregrid = 1.D8/fgrid(j) !   if opttcorr, ALL tradj_fg's are needed
+
+        Do k = ifreold, ifre - 1
+          If (fregrid>=fre(k) .And. fregrid<fre(k+1)) Go To 120
+        End Do
+        Write (999, *) k, fre(k), fre(k+1), j, fregrid
+        Write (999, *) ' stop: subr. opacitl: fregrid not found in fre'
+        Print *, k, fre(k), fre(k+1), j, fregrid
+        Stop ' subr. opacitl: fregrid not found in fre'
+120     ifreold = k
+        q = (fre(k)-fregrid)/(fre(k)-fre(k+1))
+        q1 = 1.D0 - q
+
+        tradj_fg(j, :) = q1*tradj(:, k) + q*tradj(:, k+1)
+      End Do
+    End If
+
+
+!   prepare common factors to calculate coll_therm per line
+    betafac = (dvdr+2.*vr)/3.D-8 !  D-8, since xlam in Angst!
+    collfac = c_vanreg*xne/sqrt(te)
+
+!   for first freq. interval (nlambox=1) calculate vanreg in advance
+    u0 = 1.4388D8/(fgrid(1)*te)
+    vanreg = collfac*fgrid(1)**3*(1.D0-exp(-u0))
+    vanreg1 = vanreg*c_forbid/fgrid(1)
+    vanreg = vanreg/(1.+vanreg)
+
+!   additional quantities to calculate heating/cooling rates
+!   if(opttcor) then
+    If (opttcor_simple) Then
+!     heating/cooling rates inside clumps, no scaling required
+      qcbbu_m = 0.
+      qcbbd_m = 0.
+      dtqcbbu_m = 0.
+      dtqcbbd_m = 0.
+      wexp = wion*exp(u0*(1.D0-te/tradj_fg(1,:)))
+
+!     lambda in Angstrom!
+
+!     cooling rate = nl*Clu * hnu_lu (cf. subroutine linesob)
+!     Clu (van Regemorter) = Cul/Aul * flu * 6.67d15 / lam^2 * exp (-u0)
+!     = collfac * flu * 6.67d15 * lam * exp(-u0)
+!     clufac= collfac * 6.67d15 * exp(-u0) * lam * (0.5*hc2*1.d8) / lam
+!     cooling rate=nl*clufac*flu
+!     heating rate=nu * (nl/nu)* clufac*flu  with nu = nl*(nu/nl)
+
+      clufac = collfac*6.6702082D15*exp(-u0)*0.5D8*hc2
+      clufac_forb = clufac*c_forbid/fgrid(1)
+    End If
+
+    npack = nbunch
+    nlinesr = 0
+    nlinesm = 0
+
+    opalgrid = 0.
+    fracth = 0.
+    fracnth = 0.
+    opal_aux = 0.
+    sum_th = 0.
+    sum_nth = 0.
+    nlamb_old = 0 !                 initialize
+    nlambox_old = 0 !               initialize
+
+!   set to zero, to finally check whether nlambox has been considered or not
+!   (see end of routine)
+    opa_eff_grid = 0.
+
+    Call sumopal_nlte(iblue, ired, nlinesr, nlinesm, betafac, collfac, clf, &
+      avoigtp, nblock, xne, inemin)
+
+!   --------------------------------------------------------------------
+  Else
+!   LTE path
+
+    npack = nbunch
+    nlinesr = 0
+    nlinesm = 0
+
+    opalgrid = 0.
+    opal_aux = 0.
+    nlamb_old = 0 !                 initialize
+    nlambox_old = 0 !               initialize
+
+!   set to zero, to finally check whether nlambox has been considered or not
+!   (see end of routine)
+    opa_eff_grid = 0.
+
+
+    Call sumopal_lte(ntemp, iblue, ired, nlinesr, nlinesm, clf, avoigtp, xne, &
+      inemin)
+
+  End If
+
+! NOTE: In certain cases, particularly in the IR/radio, certain NLAMBOXes
+! might
+! be not explicitly considered even if CALCOPAL=1. This will happen if there
+! are no lines in the specific boxes.
+! In these cases, we obtain opalgrid(etc)=0. as initialized and as correct.
+! If we include optically thick clumping, however, these boxes need to be
+! considered, though only for the continuum part. This is done in the
+! following.
+  Do k = 1, nlam
+    If (calcopal(k)==1 .And. opa_eff_grid(k,1)==0.) Then ! opa_eff_grid
+!     initialized above
+      If (opa_eff_grid(k,2)/=0.) Then
+        Write (999, *) ' stop: error in opa_eff_grid, opacitl'
+        Stop ' error in opa_eff_grid, opacitl'
+      End If
+      tcl_arr = opacgrid(k, :)*tcl_fac_cont
+      opa_eff_grid(k, :) = (1.+fic*tcl_arr)/(1.+tcl_arr)
+    End If
+  End Do
+
+
+! --------------------------------------------------------------------
+! FOR TESTS
+! do ll =ntemp,ID_NDEPT
+! do j=nlam-1,1,-1
+
+! if(calcopal(j).eq.0) cycle
+
+! if(mod(ll,6).eq.0) print*,j,ll,fgrid(j),opalgrid(j,ll)/opacgrid(j,ll)
+! enddo
+! enddo
+! do j=1,nlam
+! print*,'line sum ',j,nlam,calcopal(j),calcopal1(j)
+! enddo
+
+  Write (999, *)
+  Print *
+  If (lteopt) Then
+    Write (999, *) ' line summation (LTE) finished'
+    Print *, ' line summation (LTE) finished'
+  Else
+    Write (999, *) ' line summation (NLTE) finished'
+    Print *, ' line summation (NLTE) finished'
+  End If
+  Write (999, *) ' considered lines at cont. freqs: ', nlinesr, '(r,s) and ', &
+    nlinesm, '(m)'
+  Print *, ' considered lines at cont. freqs: ', nlinesr, '(r,s) and ', &
+    nlinesm, '(m)'
+  Write (999, *)
+  Print *
+
+
+  ifold = ifre
+  freold = fre
+
+  Return
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine sumopal_nlte(nstart, npack, nlinesr, nlinesm, betafac, collfac, &
+  clf, avoigtp, nblock, xne, inemin)
+
+! calculates summed line-opacities (assuming box car profiles of width
+! 2 deltanuedop, which cancels out, see notes) within fgrid
+
+! alternative version accounting for line wings can be found in
+! oldprog/nlte_approx_7.0_photlines_only.f90:
+! 84% (const1) into central 2 channels (from int[exp(-x^2)] between -1 to +1)
+! 7% (const2)  into neighbouring 2x2 channels (from int[exp(-x^2)]
+! between -3 to -1 and between 1 to 3.
+
+! Stark-broadening for (quasi-) resonance lines of metals and Hydrogen
+! New approach from Aug 2021 on: consider also neighbouring boxes.
+! Trick: amend calcopal=1 boxes with calcopal=2 to the left and right.
+! If  ni close to blue or red boundary of box, extend stark-broadened profile
+! to the left (nlambox-1) or right (nlambox+1) box.
+! Finalize (summ up) all ni's when new nlambox (as before), but now using
+! 2nd but last nlambox (not necessarily nlambox-2, since certain boxes might
+! not be considered).
+! For each nlambox, we now have 3 entries for opal_aux, namely opalbox(:,:,1)
+! accounting for bluewards box), opalbox(:,:,2) accounting for actual box, and
+! opalbox(:,:,3) accounting for redwards box), where opacities are added in
+! due
+! course.
+! Since we are summing up the the 2nd but last box, we have to consider
+! opalbox(:,:,1) from before [see notes]
+! WARNING: thus far, no special end condition, since towards the red end,
+! the nlamboxes are scarcely populated, and under usual conditions the last
+! required one is treated automatically. No warranty, however. Check if
+! large number of radio lines would be included
+
+! clumping (thick and thin) included
+
+  Use :: nlte_type
+  Use :: nlte_dim, Only: id_ndept
+  Use :: fund_const, Only: hc2, hkl, wpi => sqpi, pihalf, c_forbid, &
+    cross => cross_class
+
+  Use :: nlte_var, Only: lwion1, lam_ly, nstark, nstarkmax, idstark, wavestark
+
+  Use :: fastwind_params, Only: gfcut, opt_extend_h_wings
+
+  Use :: nlte_app, Only: jatom, calcion, te, vth8, indrec, metall, occng, &
+    wion, ergion, jatom_full, met_imin, met_imax, vth
+
+  Use :: nlte_lines, Only: id, gf, xlam, wavblue, wavcon, wavcon1, nlamb_old, &
+    nlambox_old, xlamold, opacgrid, opalgrid, opal_aux, sum_th, sum_nth, &
+    fracth, fracnth, calcopal, fgrid, vanreg, tradj_fg, u0, wexp, clufac, &
+    clufac_forb, vanreg1, nsubinter, nsubinter_frac3, cutoff_stark, &
+    gamma_stark, coeff, nlambox_ly, opa_eff_aux, opa_eff_grid, nlam
+
+  Use :: tcorr_var, Only: qcbbu_m, qcbbd_m, dtqcbbu_m, dtqcbbd_m
+
+  Use :: nlte_opt, Only: opttcor_simple, optstark
+
+  Use :: nlte_porvor, Only: epsi1, fic, tcl_fac_line, tcl_fac_cont
+
+  Implicit None
+
+
+  Integer (i4b), Intent (In) :: nstart, npack, inemin
+  Integer (i4b), Dimension (id_ndept), Intent (In) :: nblock
+  Integer (i4b), Intent (Inout) :: nlinesr, nlinesm
+
+  Real (dp), Dimension (id_ndept), Intent (In) :: betafac, collfac, clf, &
+    avoigtp, xne
+
+  Real (sp) :: gfl, test, opalt, error
+
+  Integer (i4b) :: irest, irec, j, l, low, k, nlamb, nlambox, ll, up, nindex, &
+    ni, jm, nj, nsubint, kmax, kk, nred, nblue, nold2, nlambox_save
+
+  Real (dp) :: dnue, opl, delta, xnell, tell, gammah, rat
+
+  Real (dp), Dimension (id_ndept) :: coll, opal, beta, n2n1, qcul, qclu, &
+    dtqcul, dtqclu, van, op, ap, norm
+
+  Integer (i4b), Dimension (id_ndept) :: kindex
+
+  Character (1) :: met, metup
+
+  nold2 = 0 !                       initialize
+  nstark = 0
+
+lines: Do l = nstart, npack
+
+
+    nlambox = 1 + log(xlam(l)/wavblue)/wavcon
+
+!   consider only relevant intervals, now with index 1 or 2
+!   if opttcor_simple, info for all transitions is needed
+!   before calling, opttcor_simple is checked. If true, program is stopped.
+!   if opttcor_simple should be used, new approach (extension of
+!   stark-broadening)
+!   needs to be checked for that path
+    If (.Not. opttcor_simple .And. calcopal(nlambox)==0) Cycle lines
+    k = id(l)/1000000
+    If (jatom(k)==0) Cycle lines
+!   stop ' wrong atom in line list'
+
+!   Vers. 8.5 include all elements
+!   if (indexel(k).gt.0) cycle lines  ! included in nlte
+    If (.Not. optstark .And. (k==1 .Or. k==2)) Cycle lines ! H/He
+
+    irest = id(l) - k*1000000
+    j = irest/100000
+
+    If (calcion(k,j)==0) Cycle lines ! too low abundance
+
+    irest = irest - j*100000
+    low = irest/100
+    up = irest - low*100
+    met = metall(k, j, low)
+
+!   has been checked in sumopal_lte
+!   if(low.ne.1.and.met.eq.' ') stop ' inconsistent linelist'
+    If (low/=1 .And. met==' ' .And. jatom_full(k)==0) Cycle lines
+!   if(k.eq.8.and.up.eq.0.) cycle lines
+!   if(k.eq.8.and.up.eq.0.and.xlam(l).gt.10000.) cycle lines
+
+    gfl = cross*gf(l)
+
+!   test input data
+!   if((k.lt.1 .or. k.gt.natom) .or. (j.lt.1 .or. j.gt.nion1) &
+!   &   .or. (low.lt.1)) then
+!   print*,'error in input data / sumopal:'
+!   print*,l,xlam(l),id(l),gf(l)
+!   stop
+!   endif
+
+    irec = indrec(k, j)
+
+    nlamb = 1 + log(xlam(l)/wavblue)/wavcon1
+    nindex = mod(nlamb-1, nsubinter) + 1 ! here was the bug
+
+    If (nlamb_old==0) nlamb_old = nlamb ! for very first line
+!   the frequential integral over one interval has to yield chi-bar;
+!   thus, instead of
+!   dnue=vth(k)*2.d8/xlam(l)
+!   we use
+    dnue = vth8*2.D8/xlam(l)
+
+    If (nlamb/=nlamb_old) Then !    condition 1
+      nlamb_old = nlamb
+
+      nlambox_save = nlambox_old
+      nlambox_old = 1 + log(xlamold/wavblue)/wavcon
+      If (nlambox_old/=nlambox_save) nold2 = nlambox_save
+
+      If (nlambox/=nlambox_old) Then ! condition 2
+
+!       this is the new condition: summ up within 2nd but last nlambox
+        If (nold2/=0) Then !        condition 3a
+          If (calcopal(nold2)==1) Then ! condition 3b
+
+!           build quantities per channel including continuum
+!           new approch: sum up opal_aux(:,:,1), and evaluate for index nold2
+            Do ni = 1, nsubinter
+              sum_nth(ni, :) = opal_aux(ni, :, 1)
+!             also for coupled channels, see notes
+!             effective opacity parameter added
+!             to recorrect, we need to multiply by 2.*vth8 (lambda remains in
+!             tau_sob)
+              opa_eff_aux(ni, :) = opal_aux(ni, :, 1)*2.*vth8*tcl_fac_line + &
+                opacgrid(nold2, :)*tcl_fac_cont
+!             opa_eff_aux is here *total* tcl!
+              opal_aux(ni, :, 1) = opal_aux(ni, :, 1) + opacgrid(nold2, :)
+!             Add continuum to summed mean opacity
+              opa_eff_aux(ni, :) = opal_aux(ni, :, 1)* &
+                (1.+fic*opa_eff_aux(ni,:))/(1.+opa_eff_aux(ni,:))
+!             Now summed effective opacity in each SUB-bin
+            End Do
+
+!           sum up channels
+            Do ll = 1, id_ndept
+              If (nblock(ll)==1) Then ! only one big channel present, should
+!               not happen so far!
+                Write (999, *) ' stop: nblock = 1!'
+                Stop ' nblock = 1!'
+                Do ni = 2, nsubinter
+                  opal_aux(1, ll, 1) = opal_aux(1, ll, 1) + &
+                    opal_aux(ni, ll, 1)
+                  opa_eff_aux(1, ll) = opa_eff_aux(1, ll) + &
+                    opa_eff_aux(ni, ll)
+                  sum_th(1, ll, 1) = sum_th(1, ll, 1) + sum_th(ni, ll, 1)
+                  sum_nth(1, ll) = sum_nth(1, ll) + sum_nth(ni, ll)
+                End Do
+                opalgrid(nold2, ll) = 1.D0/opal_aux(1, ll, 1)
+                opa_eff_grid(nold2, ll) = 1.D0/opa_eff_aux(1, ll)
+                fracth(nold2, ll) = sum_th(1, ll, 1)/opal_aux(1, ll, 1)
+                fracnth(nold2, ll) = sum_nth(1, ll)/opal_aux(1, ll, 1)
+
+              Else If (nblock(ll)/=nsubinter) Then
+!               jm coupled channels, neglecting truncated channels (at the
+!               red)
+!               carefully checked regarding opalgrid; if nblock low, large
+!               increase in opacity
+!               if strong lines present; maximum for nblock = 1: opalgrid =>
+!               opalmax
+!               nblock = 2 and only 1 line: opalgrid => opac
+                jm = nsubinter/nblock(ll)
+                nsubint = nblock(ll)*jm
+                Do ni = 1, nsubint, jm ! sum up coupled channels
+                  Do nj = 1, jm - 1 ! sum up subchannels
+                    opal_aux(ni, ll, 1) = opal_aux(ni, ll, 1) + &
+                      opal_aux(ni+nj, ll, 1)
+                    opa_eff_aux(ni, ll) = opa_eff_aux(ni, ll) + &
+                      opa_eff_aux(ni+nj, ll)
+                    sum_th(ni, ll, 1) = sum_th(ni, ll, 1) + &
+                      sum_th(ni+nj, ll, 1)
+                    sum_nth(ni, ll) = sum_nth(ni, ll) + sum_nth(ni+nj, ll)
+!                   print*,ll,nblock(ll),jm,ni,nj,nsubinter,nsubint
+                  End Do
+                  opalgrid(nold2, ll) = opalgrid(nold2, ll) + &
+                    1./opal_aux(ni, ll, 1)
+                  opa_eff_grid(nold2, ll) = opa_eff_grid(nold2, ll) + &
+                    1./opa_eff_aux(ni, ll)
+                  fracth(nold2, ll) = fracth(nold2, ll) + &
+                    sum_th(ni, ll, 1)/opal_aux(ni, ll, 1)
+                  fracnth(nold2, ll) = fracnth(nold2, ll) + &
+                    sum_nth(ni, ll)/opal_aux(ni, ll, 1)
+                End Do
+              Else
+                Do ni = 1, nsubinter ! all subchannels present, e.g. in
+!                 photosphere
+                  opalgrid(nold2, ll) = opalgrid(nold2, ll) + &
+                    1./opal_aux(ni, ll, 1)
+                  opa_eff_grid(nold2, ll) = opa_eff_grid(nold2, ll) + &
+                    1./opa_eff_aux(ni, ll)
+                  fracth(nold2, ll) = fracth(nold2, ll) + &
+                    sum_th(ni, ll, 1)/opal_aux(ni, ll, 1)
+                  fracnth(nold2, ll) = fracnth(nold2, ll) + &
+                    sum_nth(ni, ll)/opal_aux(ni, ll, 1)
+                End Do
+              End If
+            End Do
+
+            Do ll = 1, id_ndept !   normalize with respect to complete
+!             interval
+              jm = nsubinter/nblock(ll)
+              nsubint = jm*nblock(ll)
+!             opalgrid checked
+              opalgrid(nold2, ll) = float(nsubint)/float(jm**2)/ &
+                opalgrid(nold2, ll) - opacgrid(nold2, ll)
+!             here we're NOT subtracting continuum in effective factor, see
+!             notes
+              opa_eff_grid(nold2, ll) = float(nsubint)/float(jm**2)/ &
+                opa_eff_grid(nold2, ll)
+!             here's where final comp. of effective opacity parameter
+!             opa_eff_grid = chi_eff/<chi> is done
+              opa_eff_grid(nold2, ll) = opa_eff_grid(nold2, ll)/ &
+                (opalgrid(nold2,ll)+opacgrid(nold2,ll))
+!             critical test for opa_eff_grid -- since working on total
+!             opacity,
+!             it should never be negative
+              If (opa_eff_grid(nold2,ll)>epsi1 .Or. opa_eff_grid(nold2,ll)<= &
+                0.D0) Then
+!               somewhat strange numerical precision thing: it indicates 1.0
+!               precisely
+!               but can hit stop anyway (at least in LTE sumopal routine
+!               coming below)
+                Write (999, *) opa_eff_grid(nold2, ll), &
+                  opalgrid(nold2, ll) + opacgrid(nold2, ll)
+                Write (999, *) abs(opa_eff_grid(nold2,ll)-1.D0)
+                Write (999, *) opalgrid(nold2, ll), opacgrid(nold2, ll)
+                Write (999, *) ' stop: opa_eff > <opa>, sumopal_nlte_1'
+                Print *, opa_eff_grid(nold2, ll), opalgrid(nold2, ll) + &
+                  opacgrid(nold2, ll)
+                Print *, abs(opa_eff_grid(nold2,ll)-1.D0)
+                Print *, opalgrid(nold2, ll), opacgrid(nold2, ll)
+                Stop ' opa_eff > <opa>, sumopal_nlte_1'
+              End If
+!             now effective
+!             if (ll.eq.2) &
+!             &
+!             print*,fgrid(nold2),nold2,ll,nsubinter,nsubint,nblock(ll), &
+!             &         opalgrid(nold2,ll),opacgrid(nold2,ll)
+              If (opalgrid(nold2,ll)<0.) opalgrid(nold2, ll) = 0.
+!             fracth and fracnth hopefully correct (missing notes)
+              fracth(nold2, ll) = fracth(nold2, ll)*float(jm)/float(nsubint)
+              fracnth(nold2, ll) = fracnth(nold2, ll)*float(jm)/float(nsubint)
+              If (fracnth(nold2,ll)>=1.D0 .Or. fracnth(nold2,ll)<fracth(nold2, &
+                ll)) Then
+                Write (999, *) nold2, ll, fracnth(nold2, ll), &
+                  fracth(nold2, ll)
+                Write (999, *) ' stop: error in fracnth'
+                Print *, nold2, ll, fracnth(nold2, ll), fracth(nold2, ll)
+                Stop ' error in fracnth'
+              End If
+!             this is the crucial test to check whether averages are OK and
+!             whether thermalization occurs for J = B (see notes)
+!             test the following condition: (<opal>+opac)*<fracth+fracnth> =:
+!             <opal>
+
+!             no such test for opa_eff_aux, since for effective we're working
+!             with
+!             the total opacity, not separating line and continuum
+!             contributions
+              opalt = opalgrid(nold2, ll)
+              test = fracnth(nold2, ll)*(opalt+opacgrid(nold2,ll))
+              If (opalt/=0 .And. test/=0.) Then
+                error = abs(1.-test/opalt)
+                If (error>1.D-3 .And. opalt>opacgrid(nold2,ll)*1.D-3) Print *, &
+                  nold2, ll, test, opalt, ' sumopal_nlte: error1 in average'
+!               stop ' error in average'
+              Else
+!               test=abs(test-opalt)=test
+!               without abs, since all quantities > 0
+                error = max(test, opalt)
+                If (error>opacgrid(nold2,ll)*1.D-3) Then
+                  Write (999, *) ' stop: sumopal_nlte: error2 in average'
+                  Stop ' sumopal_nlte: error2 in average'
+                End If
+              End If
+!             finally
+              fracnth(nold2, ll) = fracnth(nold2, ll) - fracth(nold2, ll)
+            End Do
+
+!           opal_aux=0. !this was for the old version
+            opa_eff_aux = 0. !      JO not necessary, but does not hurt
+!           sum_th=0.   !this was for the old version
+!           don't need to reset sum_nth
+
+!           print*,nold2,fgrid(nold2),fracth(nold2,42)
+!           print*,nold2,fgrid(nold2), &
+!           &        fracth(nold2,15),fracnth(nold2,15)
+!           print*,nold2,fgrid(nold2), &
+!           &        fracth(nold2,25),fracnth(nold2,25)
+!           print*,nold2,fgrid(nold2), &
+!           &        fracth(nold2,40),fracnth(nold2,40)
+
+!           test output for opaline.pro
+!           print*,fgrid(nold2),opalgrid(nold2,20)/xne(20),opalgrid(nold2,20)/opacgrid(nold2,20)
+!           print*,fgrid(nold2),opalgrid(nold2,24)/xne(24),opalgrid(nold2,24)/opacgrid(nold2,24)
+!           print*,fgrid(nold2),opalgrid(nold2,30)/xne(30),opalgrid(nold2,30)/opacgrid(nold2,30)
+!           print*,fgrid(nold2),opalgrid(nold2,40)/xne(40),opalgrid(nold2,40)/opacgrid(nold2,40)
+!           print*,nold2,fgrid(nold2),nlam,' DONE'
+          End If !                  condition 3b
+        End If !                    condition 3a
+
+!       nlambox_old=nlambox
+!       calculate new vanreg
+        u0 = 1.4388D8/(fgrid(nlambox)*te)
+        vanreg = collfac*fgrid(nlambox)**3*(1.D0-exp(-u0))
+        vanreg1 = vanreg*c_forbid/fgrid(nlambox)
+        vanreg = vanreg/(1.+vanreg)
+
+
+!       if(opttcor) then
+        If (opttcor_simple) Then
+!         calculate new wexp = dilfac*exp(hnu/k*(1./te-1./trad))
+          wexp = wion*exp(u0*(1.D0-te/tradj_fg(nlambox,:)))
+!         calculate new clufac (cf. subr. opacitl)
+          clufac = collfac*6.6702082D15*exp(-u0)*0.5D8*hc2
+          clufac_forb = clufac*c_forbid/fgrid(nlambox)
+        End If
+
+!       prepare for next nlambox
+        opal_aux(:, :, 1) = opal_aux(:, :, 2)
+        opal_aux(:, :, 2) = opal_aux(:, :, 3)
+        opal_aux(:, :, 3) = 0.
+
+        sum_th(:, :, 1) = sum_th(:, :, 2)
+        sum_th(:, :, 2) = sum_th(:, :, 3)
+        sum_th(:, :, 3) = 0.
+
+
+      End If !                      condition 2
+    End If !                        condition 1
+
+    If (jatom_full(k)==1) Then
+      Do ll = 1, id_ndept
+        If ((j<met_imin(k,ll) .Or. j>met_imax(k,ll)) .And. ll<lwion1) Then
+!         for lower depth points, we have lte!
+          opal(ll) = 0.
+          beta(ll) = 1.D20
+!         can only happen here
+        Else
+          opal(ll) = gfl*occng(irec, low, ll)/clf(ll) ! corrected
+          beta(ll) = betafac(ll)/(opal(ll)*xlam(l))
+        End If
+      End Do
+    Else
+!     for tests
+!     if(low.ne.1.and.met.eq.' ') stop ' met = empty'
+      opal = gfl*occng(irec, low, :)/clf ! corrected
+!     must have occupation numbers
+      beta = betafac/(opal*xlam(l))
+    End If
+
+    If (gf(l)<=gfcut) Then
+      van = vanreg1/gf(l)
+      van = van/(1.+van)
+    Else
+      van = vanreg
+    End If
+
+    Where (beta>.99)
+!     coll=0.  here was a bug (corrected April 2003), &
+!     however in this case coll=vanreg small anyway
+      coll = van
+    Elsewhere
+      coll = van/(van*(1.D0-beta)+beta) ! see comment in partit
+    End Where
+
+!   ---------------------------------------------------------
+!   although these quantities are not needed in case of calcopal = 0
+!   (opttcor), &
+!   they are calculated to obtain consistency with nlambox_old if-block above
+    opal = opal/dnue
+
+!   for tests; simulate missing FeIV lines
+!   if (k.eq.26.and.j.eq.4.and.xlam(l).gt.911. .and. xlam(l).lt.1400.)
+!   opal=opal*5.
+
+!   ---------------------------------------------------------
+!   inlined, to save time
+!   account for wings of Stark-broadened (quasi-)resonance lines (see notes)
+!   for ne > xnemin (ll >ienimin)
+
+    If (optstark .And. (low==1 .Or. met=='m')) Then
+
+!     at first, prepare quantities and calculate max width
+
+      If (k/=1) Then
+!       (quasi-) resonance lines from metals, simple version,
+!       assuming avoigt/sqrt(pi) << 1
+
+        Do ll = inemin, id_ndept
+          op(ll) = opal(ll)*avoigtp(ll)/dnue ! dnue includes factor 2,
+!         conventional normalization
+!         until opal < cutoff_stark (0.2) * opac
+          kindex(ll) = 0.5*sqrt(op(ll)/cutoff_stark/opacgrid(nlambox,ll)+1.)
+        End Do
+
+      Else
+!       hydrogen Lyman lines, "exact" formulation for all voigt-params (to
+!       avoid too many if-blocks
+        If (met=='m') Then
+          Write (999, *) ' stop: meta-stable levels in hydrogen-model found!'
+          Stop ' meta-stable levels in hydrogen-model found!'
+        End If
+
+        delta = vth8/vth(1) !       account for grid-spacing of sub-intervals
+
+        Do ll = inemin, id_ndept
+!         calculation of gamma_h according to multi-linear fit
+
+          xnell = xne(ll)
+          If (xnell<1.D12) xnell = 1.D12
+          If (xnell>1.D16) xnell = 1.D16
+
+          tell = te(ll)/1000.
+          If (tell<10.) tell = 10.
+          If (tell>60.) tell = 60.
+
+          xnell = log10(xnell)
+          tell = log10(tell)
+
+          gammah = coeff(0, up) + coeff(1, up)*tell + coeff(2, up)*tell**2 + &
+            coeff(3, up)*xnell + coeff(4, up)*xnell**2 + coeff(5, up)*xnell**3
+
+!         if(gammah.gt.log10(gamma_hyd(up))+0.5 .or.
+!         gammah.lt.log10(gamma_hyd(up))-0.5) then
+!         print*,gammah,log10(gamma_hyd(up))
+!         stop ' wrong fit values for gamma_hyd'
+!         endif
+!         print*,xlam(l),ll,tell,xnell,gammah,log10(gamma_hyd(up))
+
+          gammah = 10.**gammah
+
+          ap(ll) = avoigtp(ll)*wpi/dnue*gammah/gamma_stark
+          norm(ll) = 1.D0 + (pihalf-atan(1.D0/ap(ll)))/(wpi*delta)
+          opal(ll) = opal(ll)/norm(ll) ! additional normalization
+          op(ll) = opal(ll)/(2.D0*delta*wpi)
+
+!         until opal < cutoff_stark (0.2) * opac
+          rat = ap(ll)*(2.D0/tan(cutoff_stark*opacgrid(nlambox, &
+            ll)/op(ll))-1.D0)
+          If (rat<15.D0) Then
+            kindex(ll) = 1
+          Else
+            kindex(ll) = 0.5D0*sqrt(rat+1.D0)
+          End If
+!         print*,ll,ap(ll),opal(ll),opacgrid(nlambox,ll),op(ll),kindex(ll)
+
+        End Do
+      End If !                      end preparation
+
+      kmax = maxval(kindex(inemin:id_ndept))
+
+!     add wing contribution
+      If (kmax>=2) Then
+!       save important Stark_broadened transitions different from H/He
+        If (((k==6. .Or. k==7. .Or. k==8) .And. gf(l)>0.01) .Or. (k>8 .And. &
+          kmax>=10)) Then
+          nstark = nstark + 1
+          If (nstark>nstarkmax) Then
+            Write (999, *) ' stop: nstark gt nstarkmax'
+            Stop ' nstark gt nstarkmax'
+          End If
+          idstark(nstark) = l
+          wavestark(nstark) = xlam(l)
+        End If
+
+!       for tests
+!       do ll=inemin,ID_NDEPT
+!       if(kindex(ll).ge.2.and.k.eq.1) then
+!       write(*,111) ll,k,j,low,up,xlam(l),nindex,kindex(ll)
+!       endif
+!       enddo
+!       111 format(5(I2,2X),F12.5,2(2X,I2))
+
+        Do ll = inemin, id_ndept
+!         this formulation gives better results than the older one (shifting
+!         the line-centers), even though some wing contribution entering the
+!         neighbouring nlamboxes (both on the red and on the blue) is missing
+          If (kindex(ll)<2) Cycle
+
+          Do kk = 1, kindex(ll)
+            nred = nindex + kk
+            nblue = nindex - kk
+
+
+!           if(k.eq.6 .and. xlam(l).gt.970. .and. xlam(l).lt. 980.) then
+!           !        if(k.eq.6) then
+!           !        if(k.gt.2 .and. kk.eq.1 .and. kindex(ll).ge.10 .and. &
+!           !           (nindex.le.10.or.nindex.ge.50)) then
+!           print*,xlam(l),id(l),nred,nblue
+!           !         print*,ll,nlambox,nindex,nred,nblue,kindex(ll)
+!           print*,ll,nlambox,nindex,nindex+kindex(ll),nindex-kindex(ll),nsubinter
+!           print*,calcopal(nlambox-1),calcopal(nlambox),calcopal(nlambox+1)
+!           print*
+!           endif
+
+!           this was the old condition, no longer valid
+!           if(nred.gt.nsubinter.and.nblue.lt.1) exit
+
+            If (k/=1) Then
+!             metals
+              opl = op(ll)/dble(4*kk*kk-1)
+            Else
+              opl = op(ll)*atan(2.D0/(1.D0+dble(4*kk*kk-1)/ap(ll)))
+!             hydrogen
+            End If
+
+            If (nred<=nsubinter) Then
+              opal_aux(nred, ll, 2) = opal_aux(nred, ll, 2) + opl
+              sum_th(nred, ll, 2) = sum_th(nred, ll, 2) + opl*coll(ll)
+!             if(k.eq.6 .and. xlam(l).gt.970. .and. xlam(l).lt. 980.) then
+!             print*,'centerbox red',kk,nred
+!             endif
+
+!             next nlambox interval (if calcopal ne 0), if nindex close to red
+!             boundary
+!             (difference ge nsubinter_frac3, typically 20),
+!             and for a maximum length symmetric to the blue side (inside
+!             nlambox, minimum: nblue=1)
+!             "nlam" is maximum number of boxes
+            Else If (nlambox<nlam .And. (opt_extend_h_wings .Or. k/=1)) Then
+!             in dependence of OPT_EXTEND_H_WINGS, range is extended for all
+!             elements,
+!             or only for k ne 1
+              If (calcopal(nlambox+1)/=0 .And. nindex>=(nsubinter- &
+                nsubinter_frac3) .And. nred<=(2*nindex-1)) Then
+                opal_aux(nred-nsubinter, ll, 3) = opal_aux(nred-nsubinter, ll, &
+                  3) + opl
+!               adopting coll as constant within nlambox +/- 1
+                sum_th(nred-nsubinter, ll, 3) = sum_th(nred-nsubinter, ll, 3) &
+                  + opl*coll(ll)
+!               if(k.eq.6 .and. xlam(l).gt.970. .and. xlam(l).lt. 980.) then
+!               print*,'red box',kk,nred,nred-nsubinter
+!               endif
+              End If
+            End If
+
+            If (nblue>=1) Then
+              opal_aux(nblue, ll, 2) = opal_aux(nblue, ll, 2) + opl
+              sum_th(nblue, ll, 2) = sum_th(nblue, ll, 2) + opl*coll(ll)
+!             if(k.eq.6 .and. xlam(l).gt.970. .and. xlam(l).lt. 980.) then
+!             print*,'centerbox blue',kk,nblue
+!             endif
+
+!             previous nlambox interval (if calcopal ne 0), if nindex close to
+!             blue boundary
+!             (difference ge nsubinter_frac3, typically 20),
+!             and for a maximum length symmetric to the red side (inside
+!             nlambox, maximum: nred=nsubinter)
+!             "nlam" is maximum number of boxes
+            Else If (nlambox>1 .And. (opt_extend_h_wings .Or. k/=1)) Then
+!             in dependence of OPT_EXTEND_H_WINGS, range is extended for all
+!             elements,
+!             or only for k ne 1
+              If (calcopal(nlambox-1)/=0 .And. nindex<=nsubinter_frac3 .And. &
+                nblue>=(2*nindex-nsubinter)) Then
+                opal_aux(nblue+nsubinter, ll, 1) = opal_aux(nblue+nsubinter, &
+                  ll, 1) + opl
+!               adopting coll as constant within nlambox +/- 1
+                sum_th(nblue+nsubinter, ll, 1) = sum_th(nblue+nsubinter, ll, &
+                  1) + opl*coll(ll)
+!               if(k.eq.6 .and. xlam(l).gt.970. .and. xlam(l).lt. 980.) then
+!               print*,'blue box',kk,nblue,nblue+nsubinter
+!               endif
+              End If
+            End If
+
+          End Do !                  kk-loop
+
+        End Do !                    ! ll-loop
+      End If !                      end addition of wings
+
+    End If !                        Stark broadened lines
+
+
+!   ---------------------------------------------------------
+
+!   core always
+    opal_aux(nindex, :, 2) = opal_aux(nindex, :, 2) + opal(:) ! correctly
+!   normalized in
+!   both cases
+    sum_th(nindex, :, 2) = sum_th(nindex, :, 2) + opal(:)*coll(:)
+
+
+    If (met=='m') Then
+      nlinesm = nlinesm + 1
+    Else
+      nlinesr = nlinesr + 1
+    End If
+
+    xlamold = xlam(l)
+
+!   if (.not. opttcor) cycle lines
+    If (.Not. opttcor_simple) Cycle lines
+!   ----------------------------------------------------------
+!   heating and cooling rates for all lines (including calcopal = 0)
+!   no special treatment for clumping required
+!   cooling rate
+    If (up==0) Then
+      metup = ' '
+    Else
+      metup = metall(k, j, up)
+    End If
+
+    If (up/=0 .And. metup=='m' .Or. gf(l)<1.D-5) Then
+      qclu = occng(irec, low, :)*clufac_forb ! occng = nl/gl
+    Else
+      qclu = occng(irec, low, :)*clufac*gf(l) ! occng = nl/gl
+    End If
+
+!   derivatives (see notes)
+!   Important: leave out any partials with respect to n!
+    dtqclu = qclu*(u0-.5D0)/te
+
+    If (up/=0 .And. metup/=' ') Then
+
+!     NLTE value (nu/nl) times (nu/nl)* for lines  where both levels are
+!     present
+      If (low==1 .And. metall(k,j,up)/=' ') Then
+!       for consistency in strong resonance lines (cf. subr. partit)
+        n2n1 = occng(irec, up, :)/occng(irec, low, :)* &
+          exp(hkl*ergion(k,j,up)/te)
+      Else
+        n2n1 = occng(irec, up, :)/occng(irec, low, :)*exp(u0)
+      End If
+      qcul = qclu*n2n1
+      dtqcul = -qcul*0.5D0/te
+
+    Else
+!     approx. NLTE value (nu/nl) times (nu/nl)* for lines with lower level
+!     only
+      n2n1 = wexp*(1.D0-coll) + coll
+!     heating rate
+      qcul = qclu*n2n1
+!     important: use following formulation for dtqcul
+      dtqcul = qclu*coll*u0/te - qcul*0.5D0/te
+    End If
+
+    qcbbu_m(ll) = qcbbu_m(ll) + qclu(ll)
+    qcbbd_m(ll) = qcbbd_m(ll) + qcul(ll)
+    dtqcbbu_m(ll) = dtqcbbu_m(ll) + dtqclu(ll)
+    dtqcbbd_m(ll) = dtqcbbd_m(ll) + dtqcul(ll)
+
+  End Do lines
+
+! approximate first boxes after Lyman jump by values from reliable boxes
+! slightly changed in V7.2.3; what we actually want to have is that
+! the lyman jump is in box nlambox_ly-1
+  If (optstark) Then
+    If (lam_ly==0.) Then
+      Write (999, *) &
+        ' stop: Optstark and no hydrogen: lam_ly = 0. Change approach!'
+      Stop ' Optstark and no hydrogen: lam_ly = 0. Change approach!'
+    End If
+!   note: this assumes that hydrogen ground levels are denoted by 'H11' and
+!   H21'
+!   otherwise, change in frescal
+    nlambox_ly = 1 + log(lam_ly/wavblue)/wavcon + 1 ! (the +1 ensures correct
+!   position)
+
+    If (calcopal(nlambox_ly)/=1) Then
+      Write (999, *) ' stop: box next to Lyman jump (redwards) not considered'
+      Stop ' box next to Lyman jump (redwards) not considered'
+    End If
+
+    If (fgrid(nlambox_ly-1)>lam_ly) Then
+      Write (999, *) ' stop: problems with nlamboxes around Lyman jump'
+      Stop ' problems with nlamboxes around Lyman jump'
+    End If
+  End If
+
+! JO March 2022: commented out, since possible (when low z)
+! if(optstark .and. nstark.eq.0) stop 'optstark and nstark = 0'
+
+  If (optstark) Then
+    Print *
+    Print *, nstark, ' extra frequencies for Stark-broadened lines'
+    Print *
+!   for tests
+!   do ll=1,nstark
+!   l=idstark(ll)
+!   print*,'important Stark transitions', wavestark(ll),id(l),gf(l)
+!   enddo
+  End If
+
+! for tests
+! do j=1,nlam
+! if(calcopal(j).eq.1) then
+! write(*,100)
+! j,fgrid(j),opalgrid(j,10),opalgrid(j,20),opalgrid(j,40),opalgrid(j,60)
+! endif
+! enddo
+
+  Return
+! opl=opal(44)/opacgrid(nlambox,44)
+! if(xlam(l).gt.1000. .and. xlam(l).lt.2000. .and.opl.gt.0.01) &
+! &  write(*,110) k,j,low,xlam(l),nindex1,opl
+
+100 Format (3(I2,2X), F10.5, 2X, I2, 2X, F10.5)
+
+110 Format (I4, 5(2X,E10.4))
+
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine sumopal_lte(nt, nstart, npack, nlinesr, nlinesm, clf, avoigtp, xne, &
+  inemin_in)
+
+! calculates summed line-opacities (assuming box car profiles of width
+! 2 deltanuedop, which cancels out, see notes) within fgrid
+
+! no velocity-field effects, since only needed for grad in lower atmosphere
+
+! alternative version accounting for line wings can be found in
+! oldprog/nlte_approx_7.0_photlines_only.f90:
+! 84% (const1) into central 2 channels (from int[exp(-x^2)] between -1 to +1)
+! 7% (const2)  into neighbouring 2x2 channels (from int[exp(-x^2)]
+! between -3 to -1 and between 1 to 3.
+
+! Stark-broadening for (quasi-) resonance lines of metals and Hydrogen.
+! New approach from Aug 2021 on: consider also neighbouring boxes.
+! Trick: amend calcopal=1 boxes with calcopal=2 to the left and right.
+! If  ni close to blue or red boundary of box, extend stark-broadened profile
+! to the left (nlambox-1) or right (nlambox+1) box.
+! Finalize (summ up) all ni's when new nlambox (as before), but now using
+! 2nd but last nlambox (not necessarily nlambox-2, since certain boxes might
+! not be considered).
+! For each nlambox, we now have 3 entries for opal_aux, namely opalbox(:,:,1)
+! accounting for bluewards box), opalbox(:,:,2) accounting for actual box, and
+! opalbox(:,:,3) accounting for redwards box), where opacities are added in
+! due
+! course.
+! Since we are summing up the the 2nd but last box, we have to consider
+! opalbox(:,:,1) from before [see notes]
+! WARNING: thus far, no special end condition, since towards the red end,
+! the nlamboxes are scarcely populated, and under usual conditions the last
+! required one is treated automatically. No warranty, however. Check if
+! large number of radio lines would be included
+
+
+! clumping included, optically thick treament in analogy to sumopal_nlte
+
+  Use :: nlte_type
+  Use :: nlte_dim, Only: nd => id_ndept
+  Use :: fund_const, Only: wpi => sqpi, pihalf, cross => cross_class
+
+  Use :: nlte_var, Only: lam_ly
+
+  Use :: fastwind_params, Only: opt_extend_h_wings
+
+  Use :: nlte_app, Only: jatom, calcion, te, vth8, indrec, metall, occng, &
+    jatom_full, vth
+
+  Use :: nlte_lines, Only: id, gf, xlam, wavblue, wavcon, wavcon1, nlamb_old, &
+    nlambox_old, xlamold, opacgrid, opalgrid, opal_aux, calcopal, fgrid, &
+    nsubinter, nsubinter_frac3, cutoff_stark, gamma_stark, coeff, nlambox_ly, &
+    opa_eff_aux, opa_eff_grid, nlam
+
+  Use :: nlte_opt, Only: optstark
+
+  Use :: nlte_porvor, Only: epsi1, fic, tcl_fac_line, tcl_fac_cont
+
+  Implicit None
+  Integer (i4b), Intent (In) :: nt, nstart, npack, inemin_in
+  Integer (i4b), Intent (Inout) :: nlinesr, nlinesm
+
+  Real (dp), Dimension (nd), Intent (In) :: clf, avoigtp, xne
+
+  Real (sp) :: gfl
+
+  Integer (i4b) :: irest, irec, j, l, low, k, nlamb, nlambox, nindex, ni, ll, &
+    up, kmax, kk, nred, nblue, inemin, nold2, nlambox_save
+
+  Real (dp) :: dnue, opl, delta, xnell, tell, gammah, rat
+
+  Real (dp), Dimension (nd) :: opal, op, ap, norm
+
+  Integer (i4b), Dimension (nd) :: kindex
+
+  Character (1) :: met
+
+  nold2 = 0 !                       initialize
+
+  inemin = inemin_in
+  If (optstark .And. nt>inemin) inemin = nt
+
+lines: Do l = nstart, npack
+
+    nlambox = 1 + log(xlam(l)/wavblue)/wavcon
+!   consider only relevant intervals, now with index 1 or 2
+    If (calcopal(nlambox)==0) Cycle lines
+
+    k = id(l)/1000000
+
+    If (jatom(k)==0) Cycle lines
+!   stop ' wrong atom in line list'
+
+!   as above
+!   if (indexel(k).gt.0) cycle lines  ! included in nlte
+    If (.Not. optstark .And. (k==1 .Or. k==2)) Cycle lines ! H/He
+
+    irest = id(l) - k*1000000
+    j = irest/100000
+
+    If (calcion(k,j)==0) Cycle lines ! too low abundance
+
+    irest = irest - j*100000
+    low = irest/100
+    up = irest - low*100
+    met = metall(k, j, low)
+!   if(low.ne.1.and.met.eq.' ') stop ' inconsistent line list'
+!   if(low.ne.1.and.met.eq.' ') cycle lines
+    If (low/=1 .And. met==' ' .And. jatom_full(k)==0) Cycle lines
+!   if(k.eq.8.and.up.eq.0.and.xlam(l).gt.10000.) cycle lines
+!   if(k.eq.8.and.up.eq.0) cycle lines
+
+    gfl = cross*gf(l)
+
+!   test input data
+!   if((k.lt.1 .or. k.gt.natom) .or. (j.lt.1 .or. j.gt.nion1) &
+!   &   .or. (low.lt.1)) then
+!   print*,'error in input data / sumopal:'
+!   print*,l,xlam(l),id(l),gf(l)
+!   stop
+!   endif
+
+    irec = indrec(k, j)
+
+    nlamb = 1 + log(xlam(l)/wavblue)/wavcon1
+    nindex = mod(nlamb-1, nsubinter) + 1 ! here was the bug
+
+    If (nlamb_old==0) nlamb_old = nlamb ! for very first line
+!   the frequential integral over one niterval has to yield chi-bar;
+!   thus, instead of
+!   dnue=vth(k)*2.d8/xlam(l)
+!   we use
+    dnue = vth8*2.D8/xlam(l)
+
+    If (nlamb/=nlamb_old) Then !    condition 1
+      nlamb_old = nlamb
+
+      nlambox_save = nlambox_old
+      nlambox_old = 1 + log(xlamold/wavblue)/wavcon
+      If (nlambox_old/=nlambox_save) nold2 = nlambox_save
+!     print*,nold2,nlambox_old,nlambox
+
+      If (nlambox/=nlambox_old) Then ! condition 2
+
+
+!       this is the new condition: summ up within 2nd but last nlambox
+        If (nold2/=0) Then !        condition3a
+          If (calcopal(nold2)==1) Then ! condition 3b
+
+            Do ni = 1, nsubinter
+              opa_eff_aux(ni, nt:nd) = opal_aux(ni, nt:nd, 1)*2.*vth8* &
+                tcl_fac_line(nt:nd) + opacgrid(nold2, nt:nd)*tcl_fac_cont(nt: &
+                nd)
+              opal_aux(ni, nt:nd, 1) = opal_aux(ni, nt:nd, 1) + &
+                opacgrid(nold2, nt:nd)
+!             Add continuum to summed mean opacity
+              opa_eff_aux(ni, nt:nd) = opal_aux(ni, nt:nd, 1)* &
+                (1.+fic(nt:nd)*opa_eff_aux(ni,nt:nd))/ &
+                (1.+opa_eff_aux(ni,nt:nd))
+!             Now summed effective opacity in each SUB-bin
+              opalgrid(nold2, nt:nd) = opalgrid(nold2, nt:nd) + &
+                1./opal_aux(ni, nt:nd, 1)
+              opa_eff_grid(nold2, nt:nd) = opa_eff_grid(nold2, nt:nd) + &
+                1./opa_eff_aux(ni, nt:nd)
+            End Do
+            opalgrid(nold2, nt:nd) = float(nsubinter)/opalgrid(nold2, nt:nd) - &
+              opacgrid(nold2, nt:nd)
+            opa_eff_grid(nold2, nt:nd) = float(nsubinter)/ &
+              opa_eff_grid(nold2, nt:nd)
+
+            Do ll = nt, nd
+!             final effective opacity fraction opa_eff_grid = chi_eff/<chi>
+              opa_eff_grid(nold2, ll) = opa_eff_grid(nold2, ll)/ &
+                (opalgrid(nold2,ll)+opacgrid(nold2,ll))
+              If (opa_eff_grid(nold2,ll)>epsi1 .Or. opa_eff_grid(nold2,ll)<= &
+                0.D0) Then
+                Write (999, *) opa_eff_grid(nold2, ll), &
+                  opalgrid(nold2, ll) + opacgrid(nold2, ll)
+                Write (999, *) abs(opa_eff_grid(nold2,ll)-1.D0)
+                Write (999, *) opalgrid(nold2, ll), opacgrid(nold2, ll)
+                Write (999, *) ' stop: opa_eff > <opa>, sumopal_lte_1'
+                Print *, opa_eff_grid(nold2, ll), opalgrid(nold2, ll) + &
+                  opacgrid(nold2, ll)
+                Print *, abs(opa_eff_grid(nold2,ll)-1.D0)
+                Print *, opalgrid(nold2, ll), opacgrid(nold2, ll)
+                Stop ' opa_eff > <opa>, sumopal_lte_1'
+              End If
+              If (opalgrid(nold2,ll)<0.) opalgrid(nold2, ll) = 0.
+            End Do
+!           opal_aux=0. !this was for the old version
+            opa_eff_aux = 0. !      JO not necessary, but does not hurt
+!           print*,nold2,fgrid(nold2),nlam,' DONE'
+          End If !                  condition 3b
+        End If !                    condition 3a
+
+!       prepare for next nlambox
+        opal_aux(:, :, 1) = opal_aux(:, :, 2)
+        opal_aux(:, :, 2) = opal_aux(:, :, 3)
+        opal_aux(:, :, 3) = 0.
+      End If !                      condition 2
+    End If !                        condition 1
+
+    opal(nt:nd) = gfl*occng(irec, low, nt:nd)/(clf(nt:nd)*dnue) ! corrected
+!   for tests; simulate missing FeIV lines
+!   if (k.eq.26.and.j.eq.4.and.xlam(l).gt.911. .and. xlam(l).lt.1400.)
+!   opal(nt:nd)=opal(nt:nd)*5.
+
+!   ---------------------------------------------------------
+!   inlined, to save time
+!   account for wings of Stark-broadened (quasi-)resonance lines (see notes)
+!   for ne > xnemin (ll >ienimin)
+
+    If (optstark .And. (low==1 .Or. met=='m')) Then
+
+!     at first, prepare quantities and calculate max width
+
+      If (k/=1) Then
+!       (quasi-) resonance lines from metals, simple version,
+!       assuming avoigt/sqrt(pi) << 1
+
+        Do ll = inemin, nd
+          op(ll) = opal(ll)*avoigtp(ll)/dnue ! dnue includes factor 2,
+!         conventional normalization
+!         until opal < cutoff_stark (0.2) * opac
+          kindex(ll) = 0.5*sqrt(op(ll)/cutoff_stark/opacgrid(nlambox,ll)+1.)
+        End Do
+
+      Else
+!       hydrogen Lyman lines, "exact" formulation for all voigt-params (to
+!       avoid too many if-blocks
+        If (met=='m') Then
+          Write (999, *) ' stop: meta-stable levels in hydrogen-model found!'
+          Stop ' meta-stable levels in hydrogen-model found!'
+        End If
+
+        delta = vth8/vth(1) !       account for grid-spacing of sub-intervals
+
+        Do ll = inemin, nd
+!         calculation of gamma_h according to multi-linear fit
+
+          xnell = xne(ll)
+          If (xnell<1.D12) xnell = 1.D12
+          If (xnell>1.D16) xnell = 1.D16
+
+          tell = te(ll)/1000.
+          If (tell<10.) tell = 10.
+          If (tell>60.) tell = 60.
+
+          xnell = log10(xnell)
+          tell = log10(tell)
+
+          gammah = coeff(0, up) + coeff(1, up)*tell + coeff(2, up)*tell**2 + &
+            coeff(3, up)*xnell + coeff(4, up)*xnell**2 + coeff(5, up)*xnell**3
+
+!         if(gammah.gt.log10(gamma_hyd(up))+0.5 .or.
+!         gammah.lt.log10(gamma_hyd(up))-0.5) then
+!         print*,gammah,log10(gamma_hyd(up))
+!         stop ' wrong fit values for gamma_hyd'
+!         endif
+!         print*,xlam(l),ll,tell,xnell,gammah,log10(gamma_hyd(up))
+
+          gammah = 10.**gammah
+
+          ap(ll) = avoigtp(ll)*wpi/dnue*gammah/gamma_stark
+          norm(ll) = 1.D0 + (pihalf-atan(1.D0/ap(ll)))/(wpi*delta)
+          opal(ll) = opal(ll)/norm(ll) ! additional normalization
+          op(ll) = opal(ll)/(2.D0*delta*wpi)
+
+!         until opal < cutoff_stark (0.2) * opac
+          rat = ap(ll)*(2.D0/tan(cutoff_stark*opacgrid(nlambox, &
+            ll)/op(ll))-1.D0)
+          If (rat<15.D0) Then
+            kindex(ll) = 1
+          Else
+            kindex(ll) = 0.5D0*sqrt(rat+1.D0)
+          End If
+!         print*,ll,ap(ll),opal(ll),opacgrid(nlambox,ll),op(ll),kindex(ll),xnell
+
+        End Do
+      End If !                      end preparation
+
+      kmax = maxval(kindex(inemin:nd))
+
+!     add wing contribution
+      If (kmax>=2) Then
+!       for tests
+!       do ll=inemin,nd
+!       if(kindex(ll).ge.2.and.k.eq.1) then
+!       write(*,111) ll,k,j,low,up,xlam(l),nindex,kindex(ll)
+!       endif
+!       enddo
+!       111 format(5(I2,2X),F12.5,2(2X,I2))
+
+        Do ll = inemin, nd
+!         this formulation gives better results than the older one (shifting
+!         the line-centers), even though some wing contribution entering the
+!         neighbouring nlamboxes (both on the red and on the blue) is missing
+          If (kindex(ll)<2) Cycle
+
+          Do kk = 1, kindex(ll)
+            nred = nindex + kk
+            nblue = nindex - kk
+
+!           if(k.eq.6 .and. xlam(l).gt.970. .and. xlam(l).lt. 980.) then
+!           !        if(k.gt.2 .and. kk.eq.1 .and. kindex(ll).ge.10 .and. &
+!           !           (nindex.le.10.or.nindex.ge.50)) then
+!           print*,xlam(l),id(l)
+!           print*,ll,nlambox,nindex,nred,nblue,nsubinter
+!           !
+!           print*,ll,nlambox,nindex,nindex+kindex(ll),nindex-kindex(ll),nsubinter
+!           !
+!           print*,calcopal(nlambox-1),calcopal(nlambox),calcopal(nlambox+1)
+!           !          print*
+!           endif
+
+!           this was the old condition, no longer valid
+!           if(nred.gt.nsubinter.and.nblue.lt.1) exit
+
+            If (k/=1) Then
+!             metals
+              opl = op(ll)/dble(4*kk*kk-1)
+            Else
+              opl = op(ll)*atan(2.D0/(1.D0+dble(4*kk*kk-1)/ap(ll)))
+!             hydrogen
+            End If
+
+            If (nred<=nsubinter) Then
+              opal_aux(nred, ll, 2) = opal_aux(nred, ll, 2) + opl
+
+!             next nlambox interval (if calcopal ne 0), if nindex close to red
+!             boundary
+!             (difference ge nsubinter_frac3, typically 20),
+!             and for a maximum length symmetric to the blue side (inside
+!             nlambox, minimum: nblue=1)
+!             "nlam" is maximum number of boxes
+            Else If (nlambox<nlam .And. (opt_extend_h_wings .Or. k/=1)) Then
+!             in dependence of OPT_EXTEND_H_WINGS, range is extended for all
+!             elements,
+!             or only for k ne 1
+              If (calcopal(nlambox+1)/=0 .And. nindex>=(nsubinter- &
+                nsubinter_frac3) .And. nred<=(2*nindex-1)) &
+                opal_aux(nred-nsubinter, ll, 3) = opal_aux(nred-nsubinter, ll, &
+                3) + opl
+            End If
+
+            If (nblue>=1) Then
+              opal_aux(nblue, ll, 2) = opal_aux(nblue, ll, 2) + opl
+
+!             previous nlambox interval (if calcopal ne 0), if nindex close to
+!             blue boundary
+!             (difference ge nsubinter_frac3, typically 20),
+!             and for a maximum length symmetric to the red side (inside
+!             nlambox, maximum: nred=nsubinter)
+!             "nlam" is maximum number of boxes
+            Else If (nlambox>1 .And. (opt_extend_h_wings .Or. k/=1)) Then
+!             in dependence of OPT_EXTEND_H_WINGS, range is extended for all
+!             elements,
+!             or only for k ne 1
+              If (calcopal(nlambox-1)/=0 .And. nindex<=nsubinter_frac3 .And. &
+                nblue>=(2*nindex-nsubinter)) opal_aux(nblue+nsubinter, ll, 1) &
+                = opal_aux(nblue+nsubinter, ll, 1) + opl
+            End If
+
+          End Do !                  kk-loop
+
+        End Do !                    ! ll-loop
+      End If !                      end addition of wings
+
+    End If !                        Stark broadened lines
+
+!   ---------------------------------------------------------
+
+!   core in any case
+    opal_aux(nindex, nt:nd, 2) = opal_aux(nindex, nt:nd, 2) + opal(nt:nd)
+
+    If (met=='m') Then
+      nlinesm = nlinesm + 1
+    Else
+      nlinesr = nlinesr + 1
+    End If
+
+    xlamold = xlam(l)
+
+  End Do lines
+
+! approximate first boxes after Lyman jump by values from reliable boxes
+! slightly changed in V7.2.3; what we actually want to have is that
+! the lyman jump is in box nlambox_ly-1
+  If (optstark) Then
+    If (lam_ly==0.) Then
+      Write (999, *) &
+        ' stop: Optstark and no hydrogen: lam_ly = 0. Change approach!'
+      Stop ' Optstark and no hydrogen: lam_ly = 0. Change approach!'
+    End If
+!   note: this assumes that hydrogen ground levels are denoted by 'H11' and
+!   H21'
+!   otherwise, change in frescal
+    nlambox_ly = 1 + log(lam_ly/wavblue)/wavcon + 1 ! (the +1 ensures correct
+!   position)
+
+    If (calcopal(nlambox_ly)/=1) Then
+      Write (999, *) ' stop: box next to Lyman jump (redwards) not considered'
+      Stop ' box next to Lyman jump (redwards) not considered'
+    End If
+
+    If (fgrid(nlambox_ly-1)>lam_ly) Then
+      Write (999, *) ' stop: problems with nlamboxes around Lyman jump'
+      Stop ' problems with nlamboxes around Lyman jump'
+    End If
+
+!   print*,nlambox_ly,calcopal(nlambox_ly),wavblue,wavcon
+!   print*,lam_ly,fgrid(nlambox_ly-1),fgrid(nlambox_ly),fgrid(nlambox_ly+1)
+  End If
+
+! for tests
+! do j=1,nlam
+! if(calcopal(j).eq.1) then
+! write(*,100)
+! j,fgrid(j),opalgrid(j,10),opalgrid(j,20),opalgrid(j,40),opalgrid(j,60)
+! endif
+! enddo
+
+  Return
+
+100 Format (I4, 5(2X,E10.4))
+
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+!PACKAGE FOR SOLUTION OF COMPLETE RATEEQUATIONS
+
+!-----------------------------------------------------------------------
+
+Subroutine select(lteopt)
+
+! define which atoms should be treated via complete rate equations
+
+! and find out which ions have to be considered
+
+! carefully checked by JP July 2025: should be OK now.
+
+  Use :: nlte_type
+  Use :: nlte_dim, Only: id_ndept
+  Use :: nlte_var, Only: almost_converged
+  Use :: fastwind_params, Only: fracmin, natom, nion, fracmin_imax
+
+  Use :: nlte_app, Only: abund, fjk, jatom, jatom_full, jmax, met_imin, &
+    met_imax
+  Use :: nlte_xrays, Only: optxray
+
+  Implicit None
+
+  Logical, Intent (In) :: lteopt
+  Integer (i4b) :: k, js, im, im1, im2, im3, jm
+  Integer (i4b), Dimension (1) :: imax, imax1, imax2
+
+  Real (dp) :: fjkmax
+  Real (dp), Dimension (nion) :: f
+
+  Logical :: changed
+
+! ------------------------------------------------------------------
+  If (lteopt) Then
+!   select atoms
+    jatom_full(6) = 1
+    jatom_full(7) = 1
+    jatom_full(8) = 1
+    jatom_full(10) = 1
+    jatom_full(12) = 1
+!   jatom_full(13)=1  !Aluminum, in case select
+    jatom_full(14) = 1
+    jatom_full(15) = 1
+    jatom_full(16) = 1
+    jatom_full(18) = 1
+!   jatom_full(20)=1 !Ca, in case
+    jatom_full(26) = 1
+    jatom_full(28) = 1
+
+    Do k = 1, natom
+      If (jatom_full(k)==1 .And. jatom(k)==0) Then
+        Write (999, *) ' stop: inconsistent definition of jatom_full(1)'
+        Stop ' inconsistent definition of jatom_full(1)'
+      End If
+!     Vers. 8.5 calculate all elements
+!     if (jatom_full(k).eq.1.and.indexel(k).gt.0) jatom_full(k)=0
+    End Do
+
+    Return
+!   ------------------------------------------------------------------
+  Else
+
+!   don't change imin and imax for metals when close to convergence
+    If (almost_converged .And. maxval(met_imax)/=0) Return
+
+!   select ions
+!   hydrogen
+    met_imin(1, :) = 1
+    met_imax(1, :) = 1
+
+!   helium
+    met_imin(2, :) = 1
+    met_imax(2, :) = 2
+
+!   rest
+    met_imin(3:natom, :) = 0
+    met_imax(3:natom, :) = 0
+
+    Print *, ' subroutine select(nlte) called'
+    Print *
+    Do k = 3, natom
+      If (jatom_full(k)==0) Cycle
+
+!     changed by JO (14.11.2012)
+      fjkmax = maxval(fjk(k,1:jmax(k),:))
+      If (abund(k)*fjkmax<fracmin) Cycle ! irrelevant species
+
+      Do js = 1, id_ndept
+        f = fjk(k, :, js)
+        f(jmax(k)+1:nion) = 0.
+        imax = maxloc(f)
+        im = imax(1)
+        imax1 = maxloc(f, mask=f<f(im))
+        im1 = imax1(1)
+        imax2 = maxloc(f, mask=f<f(im1))
+        im2 = imax2(1)
+        met_imin(k, js) = min0(im, im1, im2)
+        met_imax(k, js) = max0(im, im1, im2)
+!       print*,k,js,met_imin(k,js),met_imax(k,js)
+!       print*,f
+        If (met_imin(k,js)==0) Then
+          Write (999, *) ' stop: met_imin = 0'
+          Stop ' met_imin = 0'
+        End If
+
+        If (met_imax(k,js)>jmax(k)) Then
+          Write (999, *) ' stop: met_imax > jmax'
+          Stop ' met_imax > jmax'
+        End If
+
+        If (met_imax(k,js)-met_imin(k,js)/=2) Then
+!         should only happen if maximum (im) is at highest ion
+          im3 = met_imax(k, js) - 1
+          If (im3<1) Then
+            Write (999, *) ' stop: error in im3 (subr. select)'
+            Stop ' error in im3 (subr. select)'
+          End If
+          If ((im==im3 .Or. im1==im3 .Or. im2==im3) .Or. (met_imax(k, &
+            js)-met_imin(k,js)>3)) Then
+            Write (999, *) k, js, met_imin(k, js), met_imax(k, js)
+            Write (999, *) f
+            Write (999, *) &
+              ' stop: something really wrong with met_imin, met_imax'
+            Print *, k, js, met_imin(k, js), met_imax(k, js)
+            Print *, f
+            Stop ' something really wrong with met_imin, met_imax'
+          End If
+!         JO April 2018: here we now allow four ions
+!         im1=met_imax(k,js)
+!         im2=met_imin(k,js)
+!         if(f(im1).lt.f(im2)) then
+!         met_imax(k,js)=met_imax(k,js)-1
+!         else
+!         met_imin(k,js)=met_imin(k,js)+1
+!         endif
+!         if(met_imax(k,js)-met_imin(k,js).ne.2) &
+!         &     stop ' problems with met_imin, met_imax could not be cured'
+        End If
+
+!       hack to assure that niii is calculated whenever possible
+        If (k==7) Then
+!         JO July 2025: changed for hot temperatures
+          If (met_imax(k,js)==6) Then
+            met_imin(k, js) = 3
+!           met_imax(k,js)=5
+          End If
+          If (met_imax(k,js)==7) Then
+            met_imin(k, js) = 4
+          End If
+!         in all other cases, as usual
+        End If
+
+!       JO April 2018: check whether ionization not too high
+        jm = met_imax(k, js)
+        changed = .False.
+        If (fjk(k,jm,js)<fracmin_imax) Then
+          If (fjk(k,jm+1,js)>=fracmin_imax) Then
+!           JO July 2025: changed for hot temperatures -- do nothing
+!           print*,js,k,fjk(k,:,js)
+!           stop ' something strange with fjk at met_imax+1'
+            Continue
+          Else
+            met_imax(k, js) = jm - 1
+            changed = .True.
+          End If
+        End If
+
+!       JO March 2018
+!       hack to assure that OVI is calculated; here we allow for four ions
+!       (works!)
+        If (k==8 .And. optxray) Then
+          changed = .False.
+          If (met_imax(k,js)<6) Then
+            met_imin(k, js) = 3
+            met_imax(k, js) = 6
+          End If
+        End If
+        If (.Not. changed) Then
+          Print *, k, js, met_imin(k, js), met_imax(k, js)
+        Else
+          Print *, k, js, met_imin(k, js), met_imax(k, js), ' adapted'
+        End If
+      End Do
+    End Do
+
+    Print *
+    Print *, ' subroutine select: met_imin and met_imax defined'
+    Print *
+    Return
+
+  End If
+End Subroutine
+
+
+!----------------------------------------------------------------------
+
+Subroutine indexfrelines
+
+! calculated freq. index for line transitions of selected elements
+! (including DR stabilizing lines)
+
+  Use :: nlte_type
+  Use :: nlte_var, Only: ifre, fre
+  Use :: nlte_app, Only: nrec, jatom_full, kel, irbb, ilin, met_rbb, levdr, &
+    irdr, met_rdr
+
+  Use :: nlte_opt, Only: optdr
+
+  Implicit None
+  Integer (i4b) :: n, jj, ii, i, ind, istart, istartold, ndr, kk, icompdr
+  Real (dp) :: lam, energy, frec, diffe, diffe1, energyold
+
+! indices for line transitions
+  energyold = 1.D100
+  istartold = 2
+
+  Do n = 1, nrec
+    If (jatom_full(kel(n))==0) Cycle
+
+    jj = irbb(n) - 1
+    Do ii = 1, ilin(n)
+      lam = met_rbb(jj+ii)%wave
+      energy = 1.D8/lam
+      If (energy>fre(ifre) .Or. energy<fre(1)) Then
+        ind = 0
+        Go To 100
+      End If
+      istart = 2
+      If (energy>energyold) istart = istartold
+freloop: Do i = istart, ifre
+        frec = fre(i)
+        If (energy<=frec) Then
+          diffe = abs(energy-frec)
+          diffe1 = abs(energy-fre(i-1))
+          If (diffe<=diffe1) Then
+            ind = i
+          Else
+            ind = i - 1
+          End If
+          energyold = energy
+          istartold = i
+          Exit freloop
+        End If
+      End Do freloop
+100   met_rbb(jj+ii)%index = ind
+!     print*,lam,ind
+    End Do
+  End Do
+
+  If (.Not. optdr) Return
+
+! indices for DR stabilizing lines
+  energyold = 1.D100
+  istartold = 2
+
+drloop: Do n = 1, nrec
+    If (jatom_full(kel(n))==0) Cycle drloop
+    If (levdr(n)==0) Cycle drloop
+    If (irdr(n)==0) Then
+      Write (999, *) ' stop: error in DR-index -- netmat'
+      Stop ' error in DR-index -- netmat'
+    End If
+    ndr = irdr(n)
+    Do kk = 1, levdr(n)
+      icompdr = met_rdr(ndr)%ncomp
+      Do jj = 1, icompdr
+        energy = met_rdr(ndr)%ener
+        If (energy>fre(ifre) .Or. energy<fre(1)) Then
+          ind = 0
+          Go To 110
+        End If
+        istart = 2
+        If (energy>energyold) istart = istartold
+freloop1: Do i = istart, ifre
+          frec = fre(i)
+          If (energy<=frec) Then
+            diffe = abs(energy-frec)
+            diffe1 = abs(energy-fre(i-1))
+            If (diffe<=diffe1) Then
+              ind = i
+            Else
+              ind = i - 1
+            End If
+            energyold = energy
+            istartold = i
+            Exit freloop1
+          End If
+        End Do freloop1
+110     met_rdr(ndr)%index = ind
+        ndr = ndr + 1
+      End Do
+    End Do
+  End Do drloop
+
+  Return
+End Subroutine
+
+!----------------------------------------------------------------------
+
+Subroutine ionis_full_lte(ntemp, xne)
+! ----------------------------------------------------------------------
+! calculation of LTE ionisation stratification for selected elements
+! in complete atmosphere
+
+! ----------------------------------------------------------------------
+  Use :: nlte_type
+  Use :: fund_const, Only: c2 => hkl, saha
+  Use :: fastwind_params, Only: natom, nion
+
+  Use :: nlte_app, Only: nwne, jatom_full, jmax, xion, upart, fjk, te, lwion
+
+  Implicit None
+
+  Integer (i4b), Intent (In) :: ntemp
+  Real (dp), Dimension (nwne), Intent (In) :: xne
+
+  Real (dp), Dimension (0:nion) :: psi, prod
+
+  Integer (i4b) :: j, js, k, l
+  Real (dp) :: ci, trad1, ratlog, summ, uratio, fjkold
+
+  ci = 0.5*saha
+
+
+! 1. calculation of partition functions
+! -------------------------------------
+
+  Call partit_full_lte(ntemp)
+
+! 2. calculation of f_jk = N_jk/N_k
+! ---------------------------------
+radius: Do js = ntemp, nwne
+
+!   psi(j) := log (N_j+1/N_j)
+
+atom: Do k = 1, natom
+      If (jatom_full(k)==0) Cycle atom
+
+      Do j = 1, jmax(k)
+        trad1 = te(js)
+        uratio = upart(k, j+1, js)/upart(k, j, js)
+        ratlog = -log(xne(js)) + 1.5*log(trad1) - log(ci) - &
+          c2*xion(k, j)/trad1
+        psi(j) = log(uratio) + ratlog
+        prod(j) = 0.
+      End Do
+
+      summ = 0.
+      psi(0) = 0.
+      prod(0) = 0.
+
+      Do j = 0, jmax(k)
+        Do l = 0, j
+          prod(j) = prod(j) + psi(l)
+        End Do
+        summ = summ + exp(prod(j))
+      End Do
+
+      Do j = 1, jmax(k) + 1
+        fjkold = fjk(k, j, js)
+        fjk(k, j, js) = exp(prod(j-1))/summ
+!       consisteny check: fjk should be identical with previous value
+!       calculated
+!       in IONIS for l=LWION,ND
+!       in the outer region, both values should be fairly equal, but sometimes
+!       larger differences are possible (up to 50%)
+        If (js>=lwion) Then
+          If (abs(1.-fjk(k,j,js)/fjkold)>1.D-13) Then
+            Write (999, *) k, j, js, fjkold, fjk(k, j, js)
+            Write (999, *) ' stop: fjk from IONIS and IONIS_FULL_LTE &
+              &not equal in inner region'
+            Print *, k, j, js, fjkold, fjk(k, j, js)
+            Stop &
+              ' fjk from IONIS and IONIS_FULL_LTE not equal in inner region'
+          End If
+        End If
+      End Do
+
+    End Do atom
+  End Do radius
+
+  Return
+End Subroutine
+
+!----------------------------------------------------------------------
+
+Subroutine partit_full_lte(ntemp)
+! ----------------------------------------------------------------------
+! calculation of LTE partition function for subroutine ionis_full_lte
+
+! ---------------------------------------------------------------------- &
+
+  Use :: nlte_type
+  Use :: fund_const, Only: c2 => hkl
+  Use :: fastwind_params, Only: natom, nrec
+
+  Use :: nlte_app, Only: nwne, jatom_full, jmax, kel, iel, ielev, occng, &
+    gstat, ergion, upart, te
+
+  Implicit None
+
+  Integer (i4b), Intent (In) :: ntemp
+  Integer (i4b) :: i, j, js, k, lev
+  Real (dp) :: e1, el, et
+
+  Do js = ntemp, nwne
+    Do k = 1, natom
+!     JO Jan. 2016
+      If (jatom_full(k)==0) Cycle
+      upart(k, jmax(k)+1, js) = gstat(k, jmax(k)+1, 1)
+    End Do
+  End Do
+
+rec: Do i = 1, nrec
+    k = kel(i)
+    If (jatom_full(k)==0) Cycle
+    j = iel(i)
+    e1 = ergion(k, j, 1)
+
+!   ground state contribution
+
+    Do js = ntemp, nwne
+      upart(k, j, js) = gstat(k, j, 1)
+    End Do
+
+levlte: Do lev = 2, ielev(i)
+
+!     excitation energy of considered levels
+      el = ergion(k, j, lev) - e1
+      Do js = ntemp, nwne
+        et = c2*el/te(js)
+        occng(i, lev, js) = exp(-et)
+      End Do
+    End Do levlte
+
+!   ... and calculate the partition function for record i
+part: Do lev = 2, ielev(i)
+      Do js = ntemp, nwne
+        upart(k, j, js) = upart(k, j, js) + gstat(k, j, lev)*occng(i, lev, js)
+      End Do
+    End Do part
+  End Do rec
+
+  Return
+End Subroutine
+
+!----------------------------------------------------------------------
+
+Subroutine rateeq_met(xne, dvdr, vr, dilfac, clf, velo)
+
+! nlte solution for metals, including clumping
+! as in nlte.f90, heating/cooling rates are considered inside clumps
+! thus remain uncorrected
+
+  Use :: nlte_type
+  Use :: nlte_dim, Only: id_ndept
+  Use :: nlte_var, Only: lwion1, xnelte, optcmf_all, modnam, almost_converged, &
+    metconv2
+
+  Use :: fastwind_params, Only: natom, nion, nlev, name
+
+  Use :: nlte_opt, Only: opt_oiii_iter
+
+  Use :: nlte_app, Only: te, nwne, lwion, jatom_full, met_imin, met_imax, &
+    indrec, ielev, occng, gstat, occ1, fjk, occ1old, occngold, abund, xmuee, &
+    summas, lniii_out, lniii_in
+
+  Use :: tcorr_var, Only: opttcor, error_met, qcbbu_m, qcbbd_m, dtqcbbu_m, &
+    dtqcbbd_m, qcbfr_m, qcbfi_m, dtqcbfr_m, dtqcbfi_m, qrbfr_m, qrbfi_m, &
+    dtqrbfr_m, dtqrbfi_m, error_met_mean, temp_converged
+
+  Use :: nlte_lines, Only: metconv1
+
+  Use :: nlte_porvor, Only: fic, tcl_fac_line
+
+  Implicit None
+
+  Real (dp), Dimension (nwne), Intent (In) :: xne, dvdr, vr, dilfac, clf, velo
+  Integer (i4b) :: ll, k, ilow, imax, mn, n, ilev, j, i
+  Integer (i4b), Dimension (nion) :: noff
+
+  Real (dp), Dimension (30) :: store
+  Real (dp), Dimension (4*nlev+1) :: blev0, blevel ! occ/g, occ
+  Real (dp), Dimension (natom, id_ndept) :: errork
+  Real (dp), Dimension (natom, id_ndept) :: devfjkmax
+  Real (dp), Dimension (id_ndept) :: meandev, meandevsq, err_o
+  Logical, Dimension (natom) :: flag_imax
+
+  Real (dp) :: summ, sumj, sumfjk, errk1, errk2, fjkim1, occmax, bold, error, &
+    error1, summ1, aux, fjknew, err_o_max, err_o_max_old
+
+! if set to .true., creates output for metal rates similar to 'megasalida',
+! in files 'OUT_NETMAT_MET_I, with I = 1, 2, ...
+! output can be digested with idl-routine 'diffrat.pro'
+  Logical :: optout = .False.
+
+  Logical :: damped
+  Integer (i4b) :: icounter, indi, irat, irat_aux
+
+  Character (3) :: counter
+
+  Data icounter/0/
+  Data err_o_max_old/1.D0/
+
+  If (opttcor) Then
+    qcbfr_m = 0.
+    qcbfi_m = 0.
+    dtqcbfr_m = 0.
+    dtqcbfi_m = 0.
+
+    qrbfr_m = 0.
+    qrbfi_m = 0.
+    dtqrbfr_m = 0.
+    dtqrbfi_m = 0.
+
+    qcbbu_m = 0.
+    qcbbd_m = 0.
+    dtqcbbu_m = 0.
+    dtqcbbd_m = 0.
+    store = 0.
+  End If
+
+  errork = 0.
+  err_o = 0.
+
+  devfjkmax = 0.
+  meandev = 0.
+  meandevsq = 0.
+
+  If (lwion1<lwion) Then
+    Write (999, *) ' stop: something wrong with lwion1'
+    Stop ' something wrong with lwion1'
+  End If
+
+  If (optout) Then
+    icounter = icounter + 1
+    Print *, 'icounter netmat = ', icounter
+    Write (counter, Fmt='(i3)') icounter
+!   if(icounter.ge.104) &
+!   &  open(1,file=trim(modnam)//'/OUT_NETMAT_MET_'//ADJUSTL(COUNTER))
+    Open (1, File=trim(modnam)//'/OUT_NETMAT_MET_'//adjustl(counter))
+  End If
+
+  Print *
+  Print *, ' Rigorous NLTE treatment for elements (ions at lwion1-1 =', &
+    lwion1 - 1, ')'
+  Print *
+! changed; now we assume LTE only for taur > 2 for selected elements
+
+depthloop: Do ll = 1, lwion1 - 1 !  LTE at greater depths
+!   if this is changed here, corresponding changes in jbar_phot etc. are
+!   required as well
+
+kloop: Do k = 1, natom
+      If (jatom_full(k)==0) Cycle
+      ilow = met_imin(k, ll)
+      imax = met_imax(k, ll)
+      If (imax==0) Then
+        If (ilow/=0) Then
+          Write (999, *) ' stop: imax = 0 and ilow ne 0'
+          Stop ' imax = 0 and ilow ne 0'
+        End If
+        Cycle
+      End If
+!     define vector of old occupation numbers and offset-vector
+      mn = 0
+      noff(ilow) = mn
+      Do j = ilow, imax
+        n = indrec(k, j)
+        ilev = ielev(n)
+        If (occngold(n,1,ll)==0.) Then ! start, change of ionization stages
+          blev0(noff(j)+1:noff(j)+ilev) = occng(n, 1:ilev, ll)
+!         check consistency
+        Else
+          blev0(noff(j)+1:noff(j)+ilev) = occngold(n, 1:ilev, ll)
+        End If
+        mn = mn + ilev
+        noff(j+1) = mn
+      End Do
+      mn = mn + 1
+      If (occ1old(k,imax+1,ll)==0.) Then
+        blev0(mn) = occ1(k, imax+1, ll)/gstat(k, imax+1, 1)
+      Else
+        blev0(mn) = occ1old(k, imax+1, ll)/gstat(k, imax+1, 1)
+      End If
+!     Jo Sept 2018
+!     far last iterations, modify only N and O, keep other elements constant
+      If (metconv2 .And. k/=7 .And. k/=8) Then
+
+        Do j = ilow, imax + 1
+          If (j==imax+1) Then
+            ilev = 1
+          Else
+            n = indrec(k, j)
+            ilev = ielev(n)
+          End If
+          Do i = 1, ilev
+            indi = noff(j) + i
+            bold = blev0(indi)*gstat(k, j, i)
+            If (bold==0.D0) Then
+              Write (999, *) ll, k, j, i
+              Write (999, *) ' stop: bold = 0 in rateeq_met (1)'
+              Print *, ll, k, j, i
+              Stop ' bold = 0 in rateeq_met (1)'
+            End If
+            blevel(indi) = bold
+          End Do
+        End Do
+      Else
+
+!       -----setup of nlte equations and newton-raphson iteration
+!       attention: blev0  (INPUT)  is occ/gstat
+!       blevel(OUTPUT)  is occ
+        Call netmat_met(k, ilow, imax, ll, mn, noff, blev0(1:mn), &
+          blevel(1:mn), te, xne, velo, vr, xnelte(ll), dvdr(ll), vr(ll), &
+          dilfac(ll), clf(ll), lwion1-1, fic(ll), tcl_fac_line(ll), optout)
+      End If
+!     if(metconv1.and.(k.lt.6.or.k.gt.8)) then
+!     or
+!     if(metconv1.and.(k.ne.8)) then
+!     print*,ll,' atom ',k,' skipped (metconv1=.true.)'
+
+!     do j = ilow, imax + 1
+!     if(j.eq.imax+1) then
+!     ilev=1
+!     else
+!     n=indrec(k,j)
+!     ilev=ielev(n)
+!     endif
+!     do i=1,ilev
+!     indi=noff(j)+i
+!     blevel(indi)=blev0(indi)*gstat(k,j,i)
+!     enddo
+!     enddo
+!     endif
+
+
+      Do i = 1, mn
+        If (blevel(i)<0.D0) Then
+          Write (999, *) ll, k, j, i
+          Write (999, *) ' stop: blevel < 0 found'
+          Print *, ll, k, j, i
+          Stop ' blevel < 0 found'
+        End If
+      End Do
+
+      summ = sum(blevel(1:mn))
+
+      summ1 = abund(k)*xmuee(ll)/summas*xne(ll) ! includes enhanced density
+!     anyway
+      If (abs(1.-summ/summ1)>1.D-10) Then
+        Print *, k, 1. - summ/summ1
+!       stop ' particle conservation violated (rateeq_met)'
+      End If
+
+      If (almost_converged) Then
+!       hack to avoid damping
+!       if(almost_converged .and. summ1.lt.0.) then
+!       damp changes below 5%. Typically, these are levels which oscillate due
+!       to numerical problems of bb-rates (e.g., negative u), or because of
+!       overlap
+!       effects. Might be sometimes cured by more depth points.
+        damped = .False.
+        Do j = ilow, imax + 1
+          If (j==imax+1) Then
+            ilev = 1
+          Else
+            n = indrec(k, j)
+            ilev = ielev(n)
+          End If
+          Do i = 1, ilev
+            indi = noff(j) + i
+            bold = blev0(indi)*gstat(k, j, i)
+            If (bold==0.D0) Then
+              Write (999, *) ll, k, j, i
+              Write (999, *) ' stop: bold = 0 in rateeq_met (0)'
+              Print *, ll, k, j, i
+              Stop ' bold = 0 in rateeq_met (0)'
+            End If
+            error1 = 1. - bold/blevel(indi)
+            error = abs(error1)
+            If (error>0.05) Then !  log = -1.3
+!             Jo Sept 2021 (taken from version 10)
+!             large changes damped using geometrical mean
+              blevel(indi) = sqrt(blevel(indi)*bold)
+!             this was the old version
+!             if(error1.gt.0) then
+!             blevel(indi)=bold/0.975
+!             else
+!             blevel(indi)=bold/1.025
+!             endif
+              Write (*, 100) ll, k, j, i, error1
+              damped = .True.
+
+            Else If (error>0.025) Then
+!             smaller changes damped to 1.5% (note: convergence at 1%)
+              blevel(indi) = sqrt(blevel(indi)*bold)
+!             if(error1.gt.0) then
+!             blevel(indi)=bold/0.985
+!             else
+!             blevel(indi)=bold/1.015
+!             endif
+!             write(*,15) ll,k,j,i,error1
+!             15              format(' L = ',i3,': update of level
+!             ',3(2x,i3),2x,f10.5,' damped')
+              damped = .True.
+            End If
+          End Do
+        End Do
+!       renormalize level occupation
+        If (damped) Then
+          summ1 = sum(blevel(1:mn))
+          error = summ/summ1
+          If (error>1.05 .Or. error<0.95) Then
+            Print *, error
+!           stop ' too large renormalization of damped corrections'
+            Print *, ' large renormalization of damped corrections!!!!!!'
+          End If
+          blevel(1:mn) = blevel(1:mn)*error
+!         print*,' level occup. renormalized by factor',error
+        End If
+
+      End If !                      damping
+
+
+      Do j = ilow, imax
+        occ1(k, j, ll) = blevel(noff(j)+1)
+      End Do
+      occmax = maxval(occ1(k,ilow:imax,ll))
+
+      Do j = ilow, imax
+        n = indrec(k, j)
+        ilev = ielev(n)
+        errk1 = abs(1.-occ1old(k,j,ll)/occ1(k,j,ll))
+!       if in outer wind and error not from major ion, discard error
+        If (occ1(k,j,ll)/=occmax .And. velo(ll)>50D0) Then
+          If (errk1<0.03) errk1 = 0.
+        End If
+        errork(k, ll) = max(errork(k,ll), errk1)
+!       if(k.eq.15) &
+!       write(*,fmt='(5(i2,1x),4(e9.3,1x))')
+!       k,ilow,imax,j,ll,occ1old(k,j,ll),occ1(k,j,ll),errk1,errork(k)
+
+!       for tests
+        occ1old(k, j, ll) = occ1(k, j, ll) ! for next iteration
+
+        sumj = sum(blevel(noff(j)+1:noff(j)+ilev))
+!       if(k.eq.26) print*,ll,j,fjk(k,j,ll),sumj/summ
+
+!       NOTE: fractions here only w.r.t. ilow...imax+1!
+!       print*,'old',ll,k,j,fjk(k,j,ll),sumj/summ
+!       check consistency of approx. and refined method for main ions
+        fjknew = sumj/summ
+        aux = fjk(k, j, ll)/fjknew
+        aux = (1.D0-aux)/(1.D0+aux)
+        If (j==ilow) Then
+          devfjkmax(k, ll) = aux
+        Else
+          If (fjknew>fjk(k,j-1,ll)) devfjkmax(k, ll) = aux
+        End If
+!       if(ll.eq.1) print*,k,j,fjk(k,j,ll),fjknew,devfjkmax(k,ll)
+        fjk(k, j, ll) = fjknew
+        occng(n, 1:ilev, ll) = blevel(noff(j)+1:noff(j)+ilev)/ &
+          gstat(k, j, 1:ilev)
+!       JO Sept 2018: calculate change of level 10 in OIII (if present)
+        If (k==8 .And. j==3) Then
+          If (occngold(n,10,ll)==0.) Then
+            err_o(ll) = 9999.
+          Else
+            err_o(ll) = abs(1.D0-occng(n,10,ll)/occngold(n,10,ll))
+          End If
+        End If
+
+        occngold(n, 1:ilev, ll) = occng(n, 1:ilev, ll) ! for next iteration
+
+!       if(k.eq.26.and.ll.eq.1) then
+!       do lev=1,ilev
+!       print*,j,lev,gstat(k,j,lev),occngold(n,lev,ll)/occngold(n,1,ll)
+!       enddo
+!       endif
+      End Do
+
+      occ1(k, imax+1, ll) = blevel(mn)
+
+!     if(k.eq.26) print*,ll,imax+1,fjk(k,imax+1,ll),blevel(mn)/summ
+
+      fjkim1 = blevel(mn)/summ
+      fjk(k, imax+1, ll) = fjkim1 ! update
+
+!     to discared purely numerical problems
+      errk2 = 0.
+!     if(fjkim1.gt.1.d-12) then
+!     JO new precision (Oct. 2014)
+      flag_imax(k) = .False.
+      If (fjkim1>1.D-6) Then
+        errk2 = abs(1.-occ1old(k,imax+1,ll)/occ1(k,imax+1,ll))
+!       JO new precision (April 2017)
+        If (optcmf_all) Then
+          If (fjkim1<1.D-4 .Or. velo(ll)>50D0) errk2 = 0.
+        End If
+        If (errk2/=0.) flag_imax(k) = .True.
+        errork(k, ll) = max(errork(k,ll), errk2)
+!       if(k.eq.15) &
+!       write(*,fmt='(5(i2,1x),4(e9.3,1x))')
+!       k,ilow,imax,imax+1,ll,occ1old(k,imax+1,ll),occ1(k,imax+1,ll),errk2,errork(k)
+      End If
+
+      occ1old(k, imax+1, ll) = occ1(k, imax+1, ll) ! for next iteration
+
+!     for tests
+!     xnerat=xne(ll)/xnelte(ll)
+!     do j=ilow, imax
+!     n=indrec(k,j)
+!     ilev=ielev(n)
+!     do i=1,ilev
+!     gs=gstat(k,j,i)
+!     xni=occngold(n,i,ll)*gs
+!     xnk=occ1old(k,j+1,ll)   ! includes stat. weight
+!     xnistar = xnk*occnglte(n,i,ll)*gs/occ1lte(k,j+1,ll)*xnerat
+!     depart = xni/xnistar
+!     print*,ll,k,j,i,depart
+!     enddo
+!     enddo
+!     print*
+
+!     check error in ionization fractions (due to additional, approximated
+!     stages)
+!     particularly if there are X-rays, a couple of ions might be outside
+!     considered range.
+!     Note that this range is estimated from the very approx. treatment (subr.
+!     ionis)
+
+      sumfjk = sum(fjk(k,:,ll)) - 1.D0
+      If (abs(sumfjk)>5.D-3) Then
+        Write (999, *)
+        Write (999, Fmt='('' !warning! additional approx. ion(s) &
+          &outside ilow, imax+1:'',2x,i3,2x,i3,2x,e10.4)') k, ll, sumfjk
+        Print *
+        Write (*, Fmt='('' !warning! additional approx. ion(s) &
+          &outside ilow, imax+1:'',2x,i3,2x,i3,2x,e10.4)') k, ll, sumfjk
+!       print*,fjk(k,:,ll)
+      End If
+    End Do kloop
+
+!   output for ll
+    Print *
+    Do k = 1, natom
+      If (jatom_full(k)==0) Cycle
+      If (flag_imax(k)) Then
+        Write (*, Fmt='('' '',a3,'' from '',i2,'' to '',i2,''+1, &
+          &max. error (l = '',i3,'') = '',e8.2)') name(k), met_imin(k, ll), &
+          met_imax(k, ll), ll, errork(k, ll)
+      Else
+        Write (*, Fmt='('' '',a3,'' from '',i2,'' to '',i2,''  &
+          &, max. error (l = '',i3,'') = '',e8.2)') name(k), met_imin(k, ll), &
+          met_imax(k, ll), ll, errork(k, ll)
+      End If
+    End Do
+    Print *
+  End Do depthloop
+
+  If (optout) Close (1)
+! if(optout .and. icounter.ge.104) close(1)
+
+  Write (999, *)
+  Print *
+  Do k = 1, natom
+    If (jatom_full(k)==0) Cycle
+    Write (999, Fmt='('' '',a3,'' from '',i2,'' to '',i2,''(+1) &
+      &max. error (all depths) = '',e8.2)') name(k), &
+      minval(met_imin(k,1:lwion1-1)), maxval(met_imax(k,1:lwion1-1)), &
+      maxval(errork(k,1:lwion1-1))
+    Write (*, Fmt='('' '',a3,'' from '',i2,'' to '',i2,''(+1) max. &
+      &error (all depths) = '',e8.2)') name(k), minval(met_imin(k,1:lwion1-1)) &
+      , maxval(met_imax(k,1:lwion1-1)), maxval(errork(k,1:lwion1-1))
+  End Do
+
+  error_met = maxval(errork(:,1:lwion1-1))
+  error_met_mean = sum(errork)/(lwion1-1)
+  error_met_mean = log10(error_met_mean)
+  Write (999, *)
+  Write (999, *) ' max. error for above elements = ', error_met
+  Write (999, *) ' log mean error for above elements = ', error_met_mean
+  Write (999, *)
+  Print *
+  Print *, ' max. error for above elements = ', error_met
+  Print *, ' log mean error for above elements = ', error_met_mean
+  Print *
+
+  metconv1 = .False.
+! JO Jan 2021; if once set to true, keep it; otherwise, lot's of problems
+! metconv2=.false.
+! JO MARCH 2016
+  If (optcmf_all) Then
+!   JO Sept 2018
+
+    Write (999, *) ' opt_oiii_iter = ', opt_oiii_iter
+    Print *, ' opt_oiii_iter = ', opt_oiii_iter
+    If (.Not. opt_oiii_iter) Then
+
+!     standard, but niii most likely not converged
+      If (error_met<0.01 .And. error_met_mean<-2.5) metconv1 = .True.
+!     if(error_met.lt.0.01 .and. error_met_mean .lt.-3.3) metconv1=.true.
+
+    Else
+!     JO MARCH 2022:  new condition: metconv2 can only become T if temp.
+!     converged
+      If (temp_converged .And. error_met<0.01 .And. error_met_mean<-2.5) &
+        metconv2 = .True.
+!     note: if rateeq has been calculated with metconv2, error_met_mean
+!     only refers to changes in N and O (other elements remain constant)
+
+      err_o_max = maxval(err_o(lniii_out:lniii_in))
+      Write (999, *)
+      Write (999, *) ' lniii_out = ', lniii_out, ' lniii_in = ', lniii_in
+      Write (999, *) ' maximum change of OIII_10 (in range lniii_out/in): ', &
+        err_o_max
+      Write (999, *) ' in previous iteration: ', err_o_max_old
+      Write (999, *)
+      Print *
+      Print *, ' lniii_out = ', lniii_out, ' lniii_in = ', lniii_in
+      Print *, ' maximum change of OIII_10 (in range lniii_out/in): ', &
+        err_o_max
+      Print *, ' in previous iteration: ', err_o_max_old
+      Print *
+!     if(metconv2 .and. max(err_o_max,err_o_max_old).lt.5.d-4) metconv1=.true.
+!     JO relaxed Oct. 2025
+      If (metconv2 .And. max(err_o_max,err_o_max_old)<1.D-3) metconv1 = .True.
+      err_o_max_old = err_o_max
+!     metconv_1 will be set to true also if OIII is outside ilow,imax, and
+!     conditions for metconv2 are met (this corresponds to old version
+
+    End If
+
+  Else
+!   standard
+    If (error_met<0.01) metconv1 = .True.
+!   in this case, metconv2 plays no role (false always)
+  End If
+
+  Write (999, *) ' metconv1,metconv2=', metconv1, metconv2
+  Print *, ' metconv1,metconv2=', metconv1, metconv2
+
+! compare approx. and refined method, working only for metconv2 = F.
+! Otherwise, i.e., for metconv2 = T, fjk is no longer calculated for
+! approximate elements. Then, devfjkmax would be solely determined from
+! the difference between previous and current values of fjk as calculated
+! for the selected bg. elements, and would provide no additional info.
+! Thus, this test is only performed for metconv2 = F
+! JO Jan 2021
+  If (metconv2) Return
+
+! compare approx. and refined method
+  Print *, ' mean deviation of ionization fractions approx. method/almost &
+    &exact method'
+  Print *, &
+    ' for selected elements, main ionization stage (range from -1 to +1)'
+  Do ll = 1, lwion - 1
+    irat = 0
+    Do k = 1, natom
+      If (devfjkmax(k,ll)==0.D0) Cycle
+      meandev(ll) = meandev(ll) + devfjkmax(k, ll)
+      meandevsq(ll) = meandevsq(ll) + devfjkmax(k, ll)**2
+      irat = irat + 1
+    End Do
+
+    If (irat/=sum(jatom_full)) Then
+!     element might have not been considered, because of too low abundance
+!     (see subr. select)
+      irat_aux = irat
+      Do k = 1, natom
+        If (jatom_full(k)==0) Cycle
+        ilow = met_imin(k, ll)
+        imax = met_imax(k, ll)
+!       JO bug, fixed July 2018
+        If (imax==0 .And. ilow==0) irat_aux = irat_aux + 1
+      End Do
+      If (irat_aux/=sum(jatom_full)) Then
+        Write (999, *) sum(jatom_full), irat, irat_aux
+        Write (999, *) ' stop: error in irat'
+        Print *, sum(jatom_full), irat, irat_aux
+        Stop ' error in irat'
+      End If
+    End If
+
+    meandev(ll) = meandev(ll)/irat
+    aux = sqrt((meandevsq(ll)-irat*meandev(ll)**2)/float(irat-1))
+    meandevsq(ll) = aux
+    Print *, ll, irat, meandev(ll), ' +/-', meandevsq(ll)
+  End Do
+  Print *
+
+  Return
+100 Format (' L = ', I3, ': update of level ', 3(2X,I3), 2X, F10.5, ' damped')
+End Subroutine
+
+!----------------------------------------------------------------------
+
+Subroutine netmat_met(k, ilow, imax, ll, mn, noff, blev0, blevel, tend, xnend, &
+  velond, vrnd, xnelte, dvdr, vr, dilfac, clf, lastl, fic, tcl_fac_line, optout)
+
+! solution of simplified rateeq. for atom k, ionization stages ilow,imax+1 and
+! depth point ll, including clumping
+
+! note: in contrast to comments in earlier versions, collisional ionization/ &
+! recombination IS treated (Cik) ...
+
+! attention: blev0  (INPUT)  is occ/gstat
+! blevel(OUTPUT)  is occ
+
+  Use :: nlte_type
+  Use :: fund_const, Only: hk, pi, hkl, hc2, akb, c_vanreg => c_vanreg1, &
+    c_tau, c_aul, c_bul, c_blu
+
+  Use :: fastwind_params, Only: gfcut
+
+  Use :: nlte_var, Only: tradj, xj, xxk, ifre, fre, lthin, lwion1, optcmf_all
+
+  Use :: nlte_app, Only: nwne, nion, nlev, indrec, ielev, ibfup, occ1lte, &
+    gstat, icol, icbb, met_cbb, ilin, irbb, met_rbb, occnglte, abund, xmuee, &
+    summas, indexopa, alpha, xion, ergion, metall, indexel, levdr, irdr, &
+    met_rdr, tlu_met, tul_met
+
+  Use :: nlte_app, Only: louter, jbar_bg, alo_bg
+
+  Use :: tcorr_var, Only: opttcor, qcbbu_m, qcbbd_m, dtqcbbu_m, dtqcbbd_m, &
+    qrbfr_m, qrbfi_m, dtqrbfr_m, dtqrbfi_m, qcbfr_m, qcbfi_m, dtqcbfr_m, &
+    dtqcbfi_m
+
+  Use :: nlte_opt, Only: optphotlines, optdr, opttcor_simple
+
+  Use :: nlte_xrays, Only: optxray, optauger, n_kedges, k_nmin, k_nmax, eth, &
+    z_k => z, n_k => n, aug_1_6
+
+  Use :: nlte_porvor, Only: epsi1, opa_eff_rat, opa_eff_rat_old
+
+  Implicit None
+  Integer (i4b), Parameter :: ndim = 4*nlev + 1
+
+
+  Logical :: optout
+
+  Integer, Intent (In) :: k, ilow, imax, ll, mn, lastl
+  Integer, Dimension (nion), Intent (In) :: noff
+
+  Real (dp), Dimension (nwne), Intent (In) :: tend, xnend, velond, vrnd
+
+  Real (dp), Intent (In) :: xnelte, dvdr, vr, dilfac, clf
+
+  Real (dp), Intent (In) :: fic, tcl_fac_line
+
+  Real (dp), Dimension (mn), Intent (In) :: blev0
+  Real (dp), Dimension (mn), Intent (Out) :: blevel
+
+  Integer (i4b), Dimension (1) :: jm
+  Integer (i4b) :: j, n, ilev, i, n1, n2, m1, m2, jj, ii, jmax, index, ind, &
+    kk, lli, iup, nup, ndr, icompdr, nlcounter, indicator, itrans, l, ji, &
+    iqual, iup1
+  Integer (i4b), Dimension (ndim) :: indlud
+
+
+  Real (dp), Dimension (ndim, ndim) :: ratmat, rat2
+  Real (dp), Dimension (ndim-1, ndim-1) :: culmat
+  Real (dp), Dimension (ndim) :: f, flud, deltan
+
+  Real (qp), Dimension (ndim) :: aux
+
+  Real (dp) :: te, xne, mustar, eddf1, aux1, aux2, err1, prob, dum
+
+  Real (dp) :: xnerat, nenk, xxlev, x1, x2, clu, cul, omega, slope, lam, gf, &
+    tlu, tul, det, kh, alphai, edge, const, xi, tradold, xil, xel, culconst1, &
+    culconst2, om, tau0, gup, tau_mult, xxj, eddf, taub, betacic, beta, tau, &
+    aul, bul, blu, energy, bnue, nllow, u0, qcul, qclu, dtqcul, dtqclu, x3, &
+    x4, x6, xni, xnk, xnistar, cikconst, eel, cik, cikhnu, integral, tradmean, &
+    xip, ener, flu, xlamc, afac, add, occlo, occup
+! x31,x41,ed,hckt,freq,xxjj,exk,hcfre3,aux0,aux1,aux2
+
+  Real (dp) :: tcl, fac2
+
+
+  te = tend(ll)
+  xne = xnend(ll)
+
+  xnerat = xne/xnelte
+
+! ------ initialitation of rate matrix and solution vector
+
+  f(1:mn) = 0.D0
+  ratmat(1:mn, 1:mn) = 0.D0
+
+! ------ radiative/collisional b-f transitions
+
+  cikconst = xne*1.55D13/sqrt(te) ! Mihalas, p. 134
+
+  kh = 1./hk
+bfloop: Do j = ilow, imax
+    n = indrec(k, j)
+    ilev = ielev(n)
+    nenk = xnerat/occ1lte(k, j+1, ll) ! includes stat. weight
+
+    Do i = 1, ilev
+
+      index = indexopa(n, i)
+!     specified for all edges in indexfre; note, that fre(index) slightly
+!     larger than edge itself
+
+
+      alphai = alpha(n, i)*1.D-18
+      If (alphai==0.) Then
+        Write (999, *) ' stop: alphai = 0 in netmat_met!'
+        Stop ' alphai = 0 in netmat_met!'
+      End If
+      edge = xion(k, j) - ergion(k, j, i)
+      iup = ibfup(k, j, i)
+      If (iup/=1) edge = edge + ergion(k, j+1, iup)
+      xi = hkl*edge !               (hnu_i/k)
+      xel = xi/te !                 hnu_i/(kTe)
+      eel = exp(-xel)
+!     charge of ion (higher one) is just j (e.g., j=1 is neutral (z=0), +1 =
+!     j)
+      cik = cikconst*alphai*eel/xel*min(0.1*j, 0.3)
+
+!     preparation for all states
+      n1 = i + noff(j)
+      xxlev = occnglte(n, i, ll)*gstat(k, j, i)*nenk ! (ni/nk)*
+      If (iup==1 .Or. j==imax) Then
+!       see subroutine opacitm and opacitc (nlte.f90)
+        n2 = 1 + noff(j+1)
+      Else
+        nup = indrec(k, j+1)
+        If (occnglte(nup,iup,ll)==0.) Then
+          Write (999, *) ' stop: error in excited level'
+          Stop ' error in excited level'
+        End If
+        xxlev = xxlev*occ1lte(k, j+1, ll)/(occnglte(nup,iup,ll)*gstat(k,j+1, &
+          iup))
+        n2 = iup + noff(j+1)
+      End If
+
+      If (index==0) Then !          eq.0 for edges larger than max(fre)
+        x1 = 0.
+        x2 = 0.
+      Else
+        const = 8.D0*pi*edge**2*alphai*kh ! 8pi alpha (nu_i/c)^2 * k/h
+!       ------------------------------------------------------------------------
+!       in case and
+!       for ground-states, ALI with tradj1 (i.e., without dilution factor)
+!       Note that so far there is no indication that ALI is needed
+!       Thus: commented out until further need
+!       if(i.eq.1) then
+!       kk=index
+!       tradold=tradj1(ll,kk)
+!       xni, xnk and xxlev already calculated above
+!       xni=blev0(n1)*gstat(k,j,1)
+!       if(j.eq.imax) then
+!       xnk=blev0(n2)*gstat(k,j+1,1)
+!       else
+!       xnk=blev0(n2)*gstat(k,j+1,iup)
+!       endif
+!       xnistar=xnk*xxlev
+!       depart=xni/xnistar
+!       in accordance to assumption
+!       opabf=xnistar*alphai*(edge/fre(kk))**2*(depart-eel*fre(kk)/edge)/clf
+!       !corrected
+!       opac already corrected
+!       betaopa=opabf/opac(ll,kk)
+!       assume maximum alo (constant over integration regime)
+!       delta Jnu = Jnu-ALO* * Bnu/b = Jnu *(1-ALO* * Bnu/(b*Jnu)
+!       = Jnu * alofac, which is integrated over frequency
+!       aloeff=betaopa*alo(ll,kk)
+!       alofac=1.-aloeff*bnue(1.d8/fre(kk),te)/(depart*xj(ll,kk))
+
+!       if(alofac.le.0. .or. alofac.gt.1.1) then
+!       1.1 for safety, might happen in first iterations
+!       print*,' warning! problems with alofac in netmat_met:',ll,k,j
+!       no ALI
+!       x1=const*tradold*exp(-xi/tradold)
+!       x2=const*te*eel
+!       else
+!       ALI
+!       x1=const*tradold*exp(-xi/tradold)*alofac
+!       x2=const*te*eel*(1.-aloeff) ! stimulated emission neglected
+!       endif
+!       ------------------------------------------------------------------------
+!       in case of X-rays, calculate ground-state ionization from complete
+!       integrals
+!       if(optxray .and. edge.gt.440528. .and. i.eq.1) then
+!       the uppper statement give sometimes (very seldom) a better
+!       convergence, but
+!       is also sometimes somewhat worses than the expression below. For a
+!       final
+!       judgement which statement to use, more tests on large grids are
+!       required!
+!       comment by JO (Dec. 2015): seems to be OK for standard treatment
+!       if(optxray .and. i.eq.1) then
+
+!       but changed Dec. 2015; now, ground-state always calculated 'exactly'
+!       when
+!       OPTCMF_ALL is switched on, to avoid strong oscillations when strong
+!       lines
+!       overlap with bf-edges
+!       example: PIII edge affected by CaIII lines 1->7 and 1->8 around 405 A
+
+!       JO changed Oct. 2016 (example: AlIV has edge just above 100 A,
+!       and index+1 is no longer defined
+!       if((optxray.or.optcmf_all) .and. i.eq.1) then
+        If ((optxray .Or. optcmf_all) .And. i==1 .And. index+1<=ifre) Then
+!         tested: sufficient to consider ground-state
+          tradold = tradj(ll, index)
+          xil = xi/tradold !        hnu_i/(kTrad)
+          If (edge<=fre(index+1)) Then
+            xip = xil*fre(index+1)/edge
+          Else
+            xil = xil*fre(index)/edge
+            xip = xil*fre(index+1)/fre(index)
+          End If
+          integral = tradold*(exp(-xil)-exp(-xip))
+          If (integral<0.) Then
+            Write (999, *) ll, k, j, i, edge, fre(index), fre(index+1), xil, &
+              xip
+            Write (999, *) &
+              ' stop: ground-state integral < 0 in netmat_met (1)'
+            Print *, ll, k, j, i, edge, fre(index), fre(index+1), xil, xip
+            Stop ' ground-state integral < 0 in netmat_met (1)'
+          End If
+          Do kk = index + 1, ifre - 1
+            tradmean = .5*(tradj(ll,kk)+tradj(ll,kk+1))
+            xil = xi*fre(kk)/(tradmean*edge)
+            xip = xil*fre(kk+1)/fre(kk)
+            add = tradmean*(exp(-xil)-exp(-xip))
+            If (add<0.) Then
+              Write (999, *) &
+                ' stop: ground-state integral < 0 in netmat_met (2)'
+              Stop ' ground-state integral < 0 in netmat_met (2)'
+            End If
+            integral = integral + add
+!           derived from exp(-xil) < 1.d-7 exp(-xi/trad) with 7*log(10.) = 16.
+!           contribution from rest neglible (including saftey for high trad)
+            If ((xil-xi/tradold)>16.) Then
+              If (add/integral>1.D-5) Then
+                Write (999, *) ' stop: netmat_met: integral not converged'
+                Stop ' netmat_met: integral not converged'
+              End If
+              Exit
+            End If
+          End Do
+          x1 = const*integral*dilfac
+!         tested; following hack not necessary
+!         tradold=tradj(ll,index)
+!         xil=xi/tradold !hnu_i/(kTrad)
+!         x1a=const*tradold*exp(-xil)*dilfac
+!         if(ll.eq.10) print*,k,j,x1,x1a
+!         to be consistent with older versions and to avoid convergence
+!         problems,
+!         use complete integral only if significant influence of X-rays
+!         x1=max(x1,x1a)
+          x2 = const*te*eel
+
+!         to account for varying radiation temperatures, if ground and
+!         metastable
+!         levels are situated on different sides of strong edges (e.g, OIII)
+        Else If (metall(k,j,i)=='m' .And. index<indexopa(n,1)) Then
+!         comprises case indexopa(n,1) = 0; in this case, index >
+!         indexopa(n,1), and
+!         nothing is done, as it should be
+          tradold = tradj(ll, index)
+          xil = xi/tradold !        hnu_i/(kTrad)
+          kk = index
+          If (edge<=fre(index+1)) Then
+            xip = xil*fre(index+1)/edge
+          Else
+            xil = xil*fre(index)/edge
+            xip = xil*fre(index+1)/fre(index)
+          End If
+          integral = tradold*(exp(-xil)-exp(-xip))
+          If (integral<0.) Then
+            Write (999, *) ll, k, j, i, edge, fre(index), fre(index+1), xil, &
+              xip
+            Write (999, *) ' stop: integral < 0 in netmat_met'
+            Print *, ll, k, j, i, edge, fre(index), fre(index+1), xil, xip
+            Stop ' integral < 0 in netmat_met'
+          End If
+          Do kk = index + 1, indexopa(n, 1) - 1
+            tradmean = .5*(tradj(ll,kk)+tradj(ll,kk+1))
+            xil = xi*fre(kk)/(tradmean*edge)
+            xip = xil*fre(kk+1)/fre(kk)
+            integral = integral + tradmean*(exp(-xil)-exp(-xip))
+          End Do
+          tradold = tradj(ll, kk)
+          xil = xi*fre(kk)/(edge*tradold)
+          integral = integral + tradold*exp(-xil)
+          x1 = const*integral*dilfac
+          x2 = const*te*eel
+!         normal path (non ground and non meta-stable states)
+!         plus ground state if no ALI
+        Else
+          tradold = tradj(ll, index)
+          xil = xi/tradold !        hnu_i/(kTrad)
+          x1 = const*tradold*exp(-xil)*dilfac
+          x2 = const*te*eel
+        End If
+      End If
+!     difference from here on; ionization to excited states allowed as well
+!     JO March 2025: here was an error in the output quantities for optout=T.
+!     corrected now
+      If (optout .And. k==8) Then
+        indicator = -1
+        occlo = blev0(n1)*gstat(k, j, i)
+        If (iup/=1 .And. j==imax) Then
+          iup1 = 1
+        Else
+          iup1 = iup
+        End If
+        occup = blev0(n2)*gstat(k, j+1, iup1)
+        Write (1, 130) ll, 'rbf', k, j, i, iup1, x1, x2*xxlev, indicator, &
+          occlo, occup
+        Write (1, 130) ll, 'cbf', k, j, i, iup1, cik, cik*xxlev, indicator, &
+          occlo, occup
+      End If
+
+      x1 = x1 + cik
+      x2 = x2 + cik
+
+      ratmat(n1, n1) = ratmat(n1, n1) - x1
+      ratmat(n1, n2) = ratmat(n1, n2) + x2*xxlev
+      ratmat(n2, n1) = ratmat(n2, n1) + x1
+      ratmat(n2, n2) = ratmat(n2, n2) - x2*xxlev
+    End Do
+
+  End Do bfloop
+
+! DR stabilizing transitions
+  If (optdr) Then
+drloop: Do j = ilow, imax
+      n = indrec(k, j)
+      If (levdr(n)==0) Cycle drloop
+      If (irdr(n)==0) Then
+        Write (999, *) ' stop: error in DR-index -- netmat'
+        Stop ' error in DR-index -- netmat'
+      End If
+      ndr = irdr(n)
+levloop: Do kk = 1, levdr(n)
+
+        x1 = 0.
+        x2 = 0.
+
+        i = met_rdr(ndr)%low
+!       everything w.r.t groundstate
+        nenk = xnerat/occ1lte(k, j+1, ll) ! includes stat. weight
+        xxlev = occnglte(n, i, ll)*gstat(k, j, i)*nenk ! (ni/nk)*
+
+        n1 = i + noff(j)
+        n2 = 1 + noff(j+1)
+
+        icompdr = met_rdr(ndr)%ncomp
+        Do jj = 1, icompdr
+!         consistency check
+          If (i/=met_rdr(ndr)%low) Then
+            Write (999, *) ' stop: something wrong in DR levels'
+            Stop ' something wrong in DR levels'
+          End If
+          index = met_rdr(ndr)%index
+          If (index==0) Cycle
+          ener = met_rdr(ndr)%ener
+          flu = met_rdr(ndr)%flu
+
+          xlamc = 1./ener
+          blu = c_blu*xlamc*flu
+          afac = hc2/xlamc**3
+          xil = xj(ll, index)
+          eel = exp(-hkl*ener/te)
+          x1 = x1 + blu*xil
+          x2 = x2 + eel*blu*(afac+xil)
+          ndr = ndr + 1
+        End Do
+
+        If (optout .And. k==8) Then
+          iup = 1
+          indicator = -1
+          occlo = blev0(n1)*gstat(k, j, i)
+          occup = blev0(n2)*gstat(k, j+1, iup)
+          Write (1, 130) ll, 'rdr', k, j, i, iup, x1, x2*xxlev, indicator, &
+            occlo, occup
+        End If
+
+        ratmat(n1, n1) = ratmat(n1, n1) - x1
+        ratmat(n1, n2) = ratmat(n1, n2) + x2*xxlev
+        ratmat(n2, n1) = ratmat(n2, n1) + x1
+        ratmat(n2, n2) = ratmat(n2, n2) - x2*xxlev
+
+      End Do levloop
+
+    End Do drloop
+  End If
+
+
+! Auger-ionization
+! in its present form (see table), only for K-shell ionization
+! NOT only for two ejected electrons, but generalized
+  If (optxray .And. optauger) Then
+augerloop: Do j = ilow, imax
+      If (j<k_nmin .Or. j>k_nmax) Cycle augerloop
+
+      Do l = 1, n_kedges
+        If (z_k(l)==k .And. n_k(l)==j) Go To 100
+      End Do
+!     element (or ion) not present in k_shell_Auger_data
+      Cycle augerloop
+
+100   itrans = l
+      If (eth(itrans)>=fre(ifre)) Cycle augerloop
+
+      Call intermepho_auger(x1, itrans, ll)
+
+      n = indrec(k, j)
+      ilev = ielev(n)
+      Do i = 1, ilev
+        n1 = i + noff(j)
+
+!       loop over all probabilities (1,2,3 etc. ejected electrons)
+proba:  Do jj = j + 1, imax + 1
+          n2 = 1 + noff(jj)
+!         e.g., if jj=j+1, we have jj-j = 1 ejected electrons, for
+!         jj=j+2  we have jj-j = 2 ejected electrons (typical case), and so on
+          prob = aug_1_6(itrans, jj-j)
+          If (prob==0.D0) Cycle proba
+!         for tests
+!         if(ll.eq.1) print*,k,j,itrans,jj,i,n1,n2,prob,x1
+
+          If (optout .And. k==8) Then
+            iup = 1
+            indicator = -1
+            dum = 0.
+            occlo = blev0(n1)*gstat(k, j, i)
+            occup = blev0(n2)*gstat(k, jj, 1)
+            Write (1, 130) ll, 'aug', k, j, i, iup, x1*prob, dum, indicator, &
+              occlo, occup
+          End If
+
+          ratmat(n1, n1) = ratmat(n1, n1) - x1*prob
+          ratmat(n2, n1) = ratmat(n2, n1) + x1*prob
+        End Do proba
+      End Do
+    End Do augerloop
+  End If !                          Auger
+
+  culconst1 = xne*8.63D-6/sqrt(te) ! omega = 1.
+  culconst2 = xne*c_vanreg/sqrt(te)
+
+  tau0 = c_tau/(dvdr/3.+2./3.*vr) ! at mue^2 = 1/3
+
+iiloop: Do j = ilow, imax
+
+    n = indrec(k, j)
+
+!   at first CUL for all possible transitions (omega = 1)
+    ilev = ielev(n)
+    Do m2 = 2, ilev
+      gup = gstat(k, j, m2)
+      n2 = noff(j) + m2
+      Do m1 = 1, m2 - 1
+        n1 = noff(j) + m1
+        culmat(n1, n2) = culconst1/gup
+      End Do
+    End Do
+
+
+!   now RBB data and CLU via van Regemorter, if allowed
+!   for RBB (dependent on tau, we have to correct for clumping)
+    jj = irbb(n) - 1
+    Do ii = 1, ilin(n)
+      ji = jj + ii
+      m1 = met_rbb(ji)%low
+      m2 = met_rbb(ji)%lup
+      lam = met_rbb(ji)%wave
+      gf = met_rbb(ji)%gf
+
+      gup = gstat(k, j, m2)
+
+      n1 = noff(j) + m1
+      n2 = noff(j) + m2
+
+      If (optcmf_all) Then
+!       use values calculated in routine calc_tlu_met, except for specific
+!       cases
+        iqual = met_rbb(ji)%quality
+        If (iqual==-1 .Or. iqual==2) Go To 110 ! outside range or no
+!       individual component
+        If (indexel(k)>0) Go To 110 ! explicit element, treated here only
+!       approx.
+        betacic = tlu_met(ji, ll)
+        If (betacic==-9999.D0) Then
+          Write (999, *) k, j, m1, m2, lam, ll, iqual
+          Write (999, *) ' stop: tul_met not present in netmat_met'
+          Print *, k, j, m1, m2, lam, ll, iqual
+          Stop ' tul_met not present in netmat_met'
+        End If
+        beta = 1.D0 - tul_met(ji, ll)
+        indicator = 4 !             cmf_complete
+        Go To 120
+      End If
+
+110   ind = met_rbb(ji)%index
+      nlcounter = met_rbb(ji)%index_jbar
+
+
+!     note: nlcounter can be zero, because of
+!     i) ind=0
+!     ii) ionization above/below imax,ilow (ll=louter(k),lwion1-1) as defined
+!     in
+!     routine jbar_metals
+      If (ind==0) Then
+        energy = 1.D8/lam
+        If (energy>fre(1) .And. energy<fre(ifre)) Then
+          Write (999, *) ' stop: index array met_rbb%index inconsistent'
+          Stop ' index array met_rbb%index inconsistent'
+        End If
+        xxj = bnue(lam, te)
+        eddf = 1./3.
+      Else
+        xxj = xj(ll, ind)
+        eddf = xxk(ll, ind)/xxj
+        If (ll<lthin(ind)) Then
+!         mustar=1.d0-2.d0*dilfac (checked, correct, but irrelevant)
+          aux1 = velond(lthin(ind))/vrnd(lthin(ind))
+          aux2 = velond(ll)/vrnd(ll)
+!         JO: I don't understand the next comment any longer, might be a typo
+!         mustar=1.d0-(aux2/aux1)**2*(1.d0-mustar**2) ! correction for lthin
+          mustar = 1. - (aux1/aux2)**2 ! correction for lthin (correct)
+          mustar = sqrt(mustar)
+          eddf1 = (1.D0-mustar**3)/3.D0/(1.D0-mustar) ! checked, correct
+!         if(eddf/eddf1.gt.2.) & ! eddf1 lower
+!         print*,'problem with eddf',lam,ll,lthin(ind),eddf,eddf1
+!         aux1=(eddf*dvdr+(1.-eddf)*vr)
+!         aux2=(eddf1*dvdr+(1.-eddf1)*vr)
+!         if(aux1/aux2.gt.3.) then ! problems only if aux2 lower
+!         print*,'problem with taub',lam,ll,lthin(ind),eddf,eddf1,aux1,aux2
+          eddf = eddf1
+!         endif
+        End If
+      End If
+
+!     clumping included
+      tau_mult = gf*lam*blev0(n1)/clf ! includes gstat, ind. emission negl.
+!     optically thick clumping as before
+      tcl = tau_mult*c_tau*tcl_fac_line
+      fac2 = (1.+fic*tcl)/(1.+tcl)
+      If (ind/=0) Then
+        If (opa_eff_rat(ll,ind)/=opa_eff_rat_old(ll,ind)) Then
+          Write (999, *) &
+            ' stop: opa_eff_rat .ne. opa_eff_rat_old in netmet_met!!!'
+          Stop ' opa_eff_rat .ne. opa_eff_rat_old in netmet_met!!!'
+        End If
+        fac2 = min(fac2, opa_eff_rat(ll,ind))
+      End If
+      If (fac2>epsi1 .Or. fac2<=0.D0) Then
+        Write (999, *) fac2, opa_eff_rat(ll, ind)
+        Write (999, *) tcl, ll, ind, lam
+        Write (999, *) ' stop: opa_eff > <opa> in netmat_met_1'
+        Print *, fac2, opa_eff_rat(ll, ind)
+        Print *, tcl, ll, ind, lam
+        Stop ' opa_eff > <opa> in netmat_met_1'
+      End If
+      tau_mult = tau_mult*fac2
+!     effective quantity
+      taub = c_tau*tau_mult/(eddf*dvdr+(1.-eddf)*vr) ! at mue^2 = eddf
+      If (taub<1.D-5) Then
+        betacic = xxj
+      Else
+        betacic = (1.-exp(-taub))/taub*xxj
+      End If
+
+      tau = tau0*tau_mult !         at mue^2 = 1/3
+      If (tau<1.D-5) Then
+        beta = 1.D0
+      Else
+        beta = (1.-exp(-tau))/tau
+      End If
+!     influence of continuum negligible!!!!
+!     if(tau.gt.1.d0.and.ind.ne.0) then
+!     betap=opac(ll,ind)*vth(k)/(c_tau*tau_mult) ! corrected
+!     if(betap.gt.100.d0 .or. (tau.gt.10d0 .and. betap.gt.tau)) then
+!     print*,ll,k,j,m1,m2,lam,tau,betap
+!     sl =
+!     strue(ll,ind)+xxj*(xne*sigmae*amh/clf+thomson_lines(ll,ind))/opac(ll,ind)
+!     !corrected
+!     betacic=betacic+sl ! U = 1 assumed
+!     beta=beta+1.d0 ! U = 1 assumed
+!     endif
+!     endif
+
+!     ----------------------------------------------------------------------
+!     exact treatment of photospheric lines
+      If (optphotlines .And. blev0(n1)/=0.D0) Then
+
+!       check treatment of line indicator = jbar_bg(nlcounter, lwion1)
+!       indicator = 1 indicates very weak line -> Sobo approach correct
+!       (check)
+!       indicator = 2 indicates that line has been treated with phot. RT
+!       indicator = 3 indicates that line has been treated with cmf RT
+!       from v7.2 on
+        If (nlcounter/=0) Then
+          indicator = jbar_bg(nlcounter, lwion1)
+
+!         check consistency with (Sobo-)results from jbar_bg, alo_bg
+          If (ll==louter(k) .And. ind/=0 .And. indicator/=3) Then
+            If (betacic/=jbar_bg(nlcounter,ll)) Then
+              Write (999, *) k, j, ii, ind, lam, betacic, &
+                jbar_bg(nlcounter, ll)
+              Write (999, *) ' stop: error in betacic'
+              Print *, k, j, ii, ind, lam, betacic, jbar_bg(nlcounter, ll)
+              Stop ' error in betacic'
+            End If
+            If (1.D0-beta/=alo_bg(nlcounter,ll)) Then
+              Write (999, *) k, j, ii, ind, lam, 1.D0 - beta, &
+                alo_bg(nlcounter, ll)
+              Write (999, *) ' stop: error in beta'
+              Print *, k, j, ii, ind, lam, 1.D0 - beta, alo_bg(nlcounter, ll)
+              Stop ' error in beta'
+            End If
+          End If
+        End If
+
+!       final consistency check
+        If (ll>louter(k) .And. ind/=0) Then
+          If (nlcounter==0) Then
+!           print*,k,j,ii,ll,lam,ind
+            Write (999, *) ' stop: nlcounter unexpectedly = 0'
+            Stop ' nlcounter unexpectedly = 0'
+!           still, there is the chance that ll > lwion-1
+          End If
+        End If
+
+!       in case, use photospheric/cmf values: jbar-alo*sline and 1.-alo
+        If (nlcounter/=0) Then
+
+          If (indicator==0) Then
+!           check, do nothing (use SA-quantities)
+            If (ll>louter(k)) Then
+              Write (999, *) ' stop: indicator = 0 (netmat)'
+              Stop ' indicator = 0 (netmat)'
+            End If
+
+          Else If (indicator==2) Then
+!           use "exact" quantities from louter(k)+1 ... lwion-1
+            If (ll>louter(k)) Then
+!             if(ii.eq.1) then
+!             write(*,101)
+!             k,j,ii,ll,beta,betacic,1.-alo_bg(nlcounter,ll),jbar_bg(nlcounter,ll)
+!             endif
+              beta = alo_bg(nlcounter, ll)
+              If (beta==0.) Then
+                Write (999, *) &
+                  ' stop: something rotten with beta1 (indicator=2)'
+                Stop ' something rotten with beta1 (indicator=2)'
+              End If
+              beta = 1. - beta !    alo is 1-beta
+              betacic = jbar_bg(nlcounter, ll) ! Jbar-alo*sl
+            End If
+
+          Else If (indicator==3) Then
+!           in contrast to previous approaches, we use ALL cmf-values.
+            If (ll==4) Then
+!             testing the the agreement between cmf and sobo at depth-point 4
+!             (to get rid of boundary effects)
+              err1 = abs(1.-beta/(1.-alo_bg(nlcounter,ll)))
+!             if (err1.gt.0.2) then
+!             if at all, the cmf quantity is larger; warning if larger by
+!             factor of 2.
+              If (err1>0.5) Then
+                Write (999, 140) k, j, ii, ll, beta, betacic, &
+                  1. - alo_bg(nlcounter, ll), jbar_bg(nlcounter, ll)
+                Write (999, *) &
+                  ' warning: SA and CMF not consistent at ll=4!!!'
+                Write (*, 140) k, j, ii, ll, beta, betacic, &
+                  1. - alo_bg(nlcounter, ll), jbar_bg(nlcounter, ll)
+                Print *, ' warning: SA and CMF not consistent at ll=4!!!'
+                Print *
+              End If
+            End If
+            beta = alo_bg(nlcounter, ll)
+            If (beta==0. .And. ll/=1) Then
+              Write (999, 140) k, j, ii, ll, beta, betacic, &
+                1. - alo_bg(nlcounter, ll), jbar_bg(nlcounter, ll)
+              Write (999, *) &
+                ' stop: something rotten with beta1 (indicator=3)'
+              Write (*, 140) k, j, ii, ll, beta, betacic, &
+                1. - alo_bg(nlcounter, ll), jbar_bg(nlcounter, ll)
+              Stop ' something rotten with beta1 (indicator=3)'
+            End If
+            beta = 1. - beta !      alo is 1-beta
+            betacic = jbar_bg(nlcounter, ll) ! Jbar-alo*sl
+
+          Else
+!           check, do nothing (use SA-quantities)
+            If (indicator/=1) Then
+              Write (999, *) ' stop: something wrotten with indicator'
+              Stop ' something wrotten with indicator'
+            End If
+          End If
+        End If
+
+      End If
+!     ----------------------------------------------------------------------
+
+120   aul = c_aul/lam**2*gf/gup
+      bul = aul*c_bul*lam**3
+      blu = gup*bul/gstat(k, j, m1)
+
+      tlu = blu*betacic
+      tul = bul*betacic + aul*beta
+!     for tests
+!     if(ll.eq.35) print*,m1,m2,lam,gf,beta,betacic,aul,bul,tlu,tul
+!     update "allowed" collisions by van regemorter
+
+      If (gf>gfcut) Then
+        culmat(n1, n2) = culconst2/gup*gf*lam
+      End If
+
+!     if(j.eq.4.and.m1.eq.1.and.ll.eq.1) then
+!     print*,m1,m2,lam,gf,beta,betacic,aul,bul,tlu,tul
+!     endif
+
+!     ------- coefficient matrix, updated for rbb rates
+
+      If (optout .And. k==8) Then
+        occlo = blev0(n1)*gstat(k, j, m1)
+        occup = blev0(n2)*gstat(k, j, m2)
+        Write (1, 130) ll, 'rbb', k, j, m1, m2, tlu, tul, indicator, occlo, &
+          occup
+      End If
+
+      ratmat(n1, n1) = ratmat(n1, n1) - tlu
+      ratmat(n1, n2) = ratmat(n1, n2) + tul
+      ratmat(n2, n1) = ratmat(n2, n1) + tlu
+      ratmat(n2, n2) = ratmat(n2, n2) - tul
+    End Do
+
+!   finally CLU where omega available
+
+    jj = icbb(n) - 1
+    Do ii = 1, icol(n)
+      ji = jj + ii
+      m1 = met_cbb(ji)%low
+      m2 = met_cbb(ji)%lup
+      omega = met_cbb(ji)%omega
+      slope = met_cbb(ji)%slope
+      om = omega + (te-2.D4)/1.D4*slope ! from adi
+      om = max(omega/10., om)
+      n1 = noff(j) + m1
+      n2 = noff(j) + m2
+      culmat(n1, n2) = culconst1/gstat(k, j, m2)*om
+    End Do
+
+
+!   now we can update the rate-matrix concerning all cbb rates
+    Do m1 = 1, ilev - 1
+      n1 = noff(j) + m1
+      nllow = 1.D0/(occnglte(n,m1,ll)*gstat(k,j,m1))
+      Do m2 = m1 + 1, ilev
+        n2 = noff(j) + m2
+        cul = culmat(n1, n2)
+
+!       ---note: no correction for ne necessary, since transition in same ion
+
+        clu = cul*occnglte(n, m2, ll)*gstat(k, j, m2)*nllow ! (n/g)*g
+        If (clu<=0.) Stop
+
+!       ------- coefficient matrix, updated for cbb rates
+
+!       so far, no output, since we assume that slowly varying
+        If (optout .And. k==8) Then
+          indicator = -1
+          occlo = blev0(n1)*gstat(k, j, m1)
+          occup = blev0(n2)*gstat(k, j, m2)
+          Write (1, 130) ll, 'cbb', k, j, m1, m2, clu, cul, indicator, occlo, &
+            occup
+        End If
+
+        ratmat(n1, n1) = ratmat(n1, n1) - clu
+        ratmat(n1, n2) = ratmat(n1, n2) + cul
+        ratmat(n2, n1) = ratmat(n2, n1) + clu
+        ratmat(n2, n2) = ratmat(n2, n2) - cul
+      End Do
+    End Do
+
+  End Do iiloop
+
+! ... and we are finished.
+
+! now let's solve the rate-equations in the same spirit as for the detailed
+! atoms
+
+! ---- newton-raphson for rate equations cont+lines
+
+! ---- leave out line with largest occ.num
+
+  jm = maxloc(blev0) !              includes gstat, should not matter
+  jmax = jm(1)
+
+  Do i = 1, mn
+    ratmat(jmax, i) = 1.D0
+  End Do
+
+  f(jmax) = abund(k)*xmuee(ll)/summas*xne ! includes enhanced density anyway
+
+  flud(1:mn) = f(1:mn)
+  rat2(1:mn, 1:mn) = ratmat(1:mn, 1:mn)
+
+! for tests
+! if (k.eq.7.and.ll.eq.7) then
+! print*,'ratmat',mn
+! do i=1,mn
+! do j=1,mn
+! print*,i,j,ratmat(i,j)
+! enddo
+! enddo
+! endif
+
+! -----solution of rate equations
+
+  Call ludcmp1(ratmat, mn, ndim, indlud, det)
+
+  Call lubksb(ratmat, mn, ndim, indlud, f)
+
+! -----------------------------------------------------------------
+! -----one newton raphson improvement
+! -----------------------------------------------------------------
+
+! old version
+! do i = 1,mn
+! sdp = -flud(i)
+
+! high precision summation
+
+! do j=1,mn
+! aux(j)=rat2(i,j)*f(j)
+! end do
+
+! call sort1(mn,aux)
+
+! do j=1,mn
+! sdp=sdp+aux(j)
+! end do
+! deltan(i) = sdp
+! end do
+
+! new version
+  aux(1:mn) = matmul(real(rat2(1:mn,1:mn),qp), real(f(1:mn),qp)) - real(flud(1 &
+    :mn), qp)
+  deltan(1:mn) = aux(1:mn)
+
+  Call lubksb(ratmat, mn, ndim, indlud, deltan)
+  Do i = 1, mn
+    blevel(i) = f(i) - deltan(i)
+  End Do
+
+  If (.Not. opttcor) Return
+  If (opttcor_simple) Then
+    Write (999, *) ' stop: opttcor_simple outdated; in case, modify &
+      &corresponding routines!'
+    Stop ' opttcor_simple outdated; in case, modify corresponding routines!'
+  End If
+! update of heating and cooling rates for most important elements
+
+! Vers. 8.5
+! heating rates updated in nlte
+  If (indexel(k)>0) Return
+
+
+
+! cbf/rbf heating and cooling
+! JO: in case update ground-state heating rates in accordance with ionis.
+! rates
+
+  Do j = ilow, imax
+    n = indrec(k, j)
+    ilev = ielev(n)
+    nenk = xnerat/occ1lte(k, j+1, ll) ! includes stat. weight
+
+    Do i = 1, ilev
+
+      index = indexopa(n, i)
+!     specified for all edges in indexfre; note, that fre(index) slightly
+!     larger than edge itself
+
+      alphai = alpha(n, i)*1.D-18
+      edge = xion(k, j) - ergion(k, j, i)
+      iup = ibfup(k, j, i)
+      If (iup/=1) edge = edge + ergion(k, j+1, iup)
+      xi = hkl*edge !               (hnu_i/k)
+      xel = xi/te !                 hnu_i/(kTe)
+      eel = exp(-xel)
+      cikhnu = cikconst*alphai*eel/xel*min(0.1*j, 0.3)*edge*0.5*hc2 ! *hnue
+
+      If (index/=0) Then !          eq.0 for edges larger than max(fre)
+        const = 8.D0*pi*edge**2*alphai*kh*akb ! 8pi alpha (nu_i/c)^2 * k/h * k
+        xi = hkl*edge !             (hnu_i/k)
+        tradold = tradj(ll, index)
+        xil = xi/tradold !          hnu_i/(kTrad)
+        x3 = const*tradold*exp(-xil)*tradold*dilfac
+        x4 = const*te*eel*te
+        x6 = x4/te*(2.D0+xel) !     dx4/dT
+!       test for accuray of above approximation.
+!       Result: Although not completely exact, the total rates are fairly
+!       well represented and of order of 1% of the H/He rates. Reason:
+!       Although occupation numbers similar, integrals much smaller, since
+!       proportional to exp(-hnu_ion/kT), where the lowest ionization edges
+!       of metals lie around 500 A!
+
+!       x31=0.
+!       x41=0.
+!       ed=fre(index)
+!       if(ed.lt.edge) stop ' netmat_met: error in edge!'
+!       hckt = hkl/te
+!       do kk=index,ifre
+!       freq=fre(kk)
+!       xxjj=xj(ll,kk)
+!       exk = exp(-hckt*freq)
+!       hcfre3 = hc2*freq**3
+!       aux0 = alphai*(ed/freq)**2*(1.-ed/freq)
+!       aux1 = aux0*xxjj
+!       aux2 = aux0*(xxjj+hcfre3)*exk
+!       x31=x31+wfre(kk)*aux1
+!       x41=x41+wfre(kk)*aux2
+!       enddo
+!       x31=4.*pi*x31
+!       x41=4.*pi*x41
+      End If
+
+      n1 = i + noff(j)
+      xni = blevel(n1)
+      xxlev = occnglte(n, i, ll)*gstat(k, j, i)*nenk ! (ni/nk)*
+
+      If (iup==1 .Or. j==imax) Then
+!       see subroutine opacitm and opacitc (nlte.f90)
+        n2 = 1 + noff(j+1)
+      Else
+        nup = indrec(k, j+1)
+        If (occnglte(nup,iup,ll)==0.) Then
+          Write (999, *) ' stop: error in excited level'
+          Stop ' error in excited level'
+        End If
+        xxlev = xxlev*occ1lte(k, j+1, ll)/(occnglte(nup,iup,ll)*gstat(k,j+1, &
+          iup))
+        n2 = iup + noff(j+1)
+      End If
+
+      xnk = blevel(n2)
+      xnistar = xnk*xxlev
+
+      qcbfr_m(ll) = qcbfr_m(ll) + xnistar*cikhnu
+      qcbfi_m(ll) = qcbfi_m(ll) + xni*cikhnu
+!     (dnistar/dT = -nistar*(1.5+u0)/te
+!     dCik/dT    = -Cik   *(1.5-u0)/te
+!     d(nistar*Cik)/dT = -(nistar*Cik)*3/te
+!     not rigorously checked so far
+      dtqcbfr_m(ll) = dtqcbfr_m(ll) - xnistar*cikhnu*3.D0/te
+      dtqcbfi_m(ll) = dtqcbfi_m(ll) - xni*cikhnu*3.D0/te
+
+      If (index/=0) Then
+        qrbfr_m(ll) = qrbfr_m(ll) + xnistar*x4
+        qrbfi_m(ll) = qrbfi_m(ll) + xni*x3
+        dtqrbfr_m(ll) = dtqrbfr_m(ll) + xnistar*(x6-x4*(1.5D0+xel)/te)
+        dtqrbfi_m(ll) = dtqrbfi_m(ll) - xni*x3*(1.5D0+xel)/te
+!       if(k.eq.7) print*,ll,n1,n2,xni*x3-xnistar*x4,xni/xnistar
+      End If
+    End Do
+  End Do
+
+! missing dr heating/cooling
+
+! cbb heating/cooling
+  Do j = ilow, imax
+    n = indrec(k, j)
+    ilev = ielev(n)
+    Do m1 = 1, ilev - 1
+      n1 = noff(j) + m1
+      nllow = 1.D0/(occnglte(n,m1,ll)*gstat(k,j,m1))
+      Do m2 = m1 + 1, ilev
+        n2 = noff(j) + m2
+        energy = (ergion(k,j,m2)-ergion(k,j,m1))*0.5*hc2 ! hnue
+        If (energy==0.D0) Then
+          Cycle
+!         print*,n2,blevel(n2),n1,blevel(n1),cul,clu
+!         print*,culmat(n1,n2),energy
+!         print*,k,j,m1,m2,ergion(k,j,m1),ergion(k,j,m2)
+!         stop
+        End If
+        cul = culmat(n1, n2)*energy
+        clu = cul*occnglte(n, m2, ll)*gstat(k, j, m2)*nllow ! (n/g)*g
+        qclu = blevel(n1)*clu !     occng = nl/gl
+        qcul = blevel(n2)*cul
+
+!       for tests
+!       if(ll.eq.30) then
+!       print*,'qclu',k,j,m1,m2,blevel(n1),qclu
+!       print*,'qcul',k,j,m1,m2,blevel(n2),qcul
+!       endif
+
+        u0 = energy/(akb*te)
+!       derivatives (see notes)
+!       Important: leave out any partials with respect to n!
+        If (abs(1.D0-qclu/qcul)<0.001) Then
+!         qclu/qcul = b_l/b_u; this condition is valid if we are close
+!         to LTE, since then the total partial should approach zero
+          dtqclu = -qclu*.5D0/te
+!         dtqclu=qclu*(u0-.5d0)/te
+        Else
+!         outside (non-LTE), we have to use to alternative formulation
+!         which increases the derivative and prevents too large and unstable
+!         corr.
+          dtqclu = qclu*(u0-.5D0)/te
+        End If
+        dtqcul = -qcul*0.5D0/te
+!       if(ll.ge.30.and.ll.le.40.and.k.eq.7.and.j.eq.4) then
+!       print*,ll,j,m1,m2,1.d8/energy,qcul-qclu
+!       endif
+
+!       tests for excluding certain transitions
+!       if (k.eq.8.and.j.eq.3.and.m1.eq.1.and.m2.eq.2) then
+!       continue
+!       else
+        qcbbu_m(ll) = qcbbu_m(ll) + qclu
+        qcbbd_m(ll) = qcbbd_m(ll) + qcul
+        dtqcbbu_m(ll) = dtqcbbu_m(ll) + dtqclu
+        dtqcbbd_m(ll) = dtqcbbd_m(ll) + dtqcul
+!       endif
+
+!       if(ll.eq.30) print*,'sum',qcbbu_m(ll),qcbbd_m(ll)
+
+        If (ll==lastl) Then
+!         derivatives for cbb heating-cooling in LTE region, to obtain
+!         consistent rates;
+!         assumption: Qlu=Qul; neglect weak dependence of omega(T)
+          Do lli = lastl + 1, nwne
+            dtqcul = -occnglte(n, m2, lli)*gstat(k, j, m2)*cul*xnend(lli)/xne* &
+              sqrt(te/tend(lli))*u0*te/(tend(lli)**2)
+            dtqcbbd_m(lli) = dtqcbbd_m(lli) + dtqcul
+          End Do
+        End If
+      End Do
+    End Do
+  End Do
+
+! if(ll.eq.9.and.k.eq.8) then
+! clu=0.
+! do lli=1,2
+! print*,'store',k,lli,store(lli)
+! clu=clu+store(lli)
+! enddo
+! print*,'store_total',clu
+! endif
+
+  Return
+
+130 Format (I3, 2X, A3, 4(2X,I3), 2(2X,E10.4), 2X, I3, 2(2X,E10.4))
+140 Format (4(I3,2X), 4(E10.4,2X))
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine calc_changes
+
+! provides output for changes in occupation numbers of bg elements
+
+  Use :: nlte_type
+  Use :: nlte_dim, Only: id_ndept
+  Use :: fastwind_params, Only: fracmin, natom, nion
+
+  Use :: nlte_app, Only: jatom, jatom_full, indrec, ielev, met_imin, met_imax, &
+    calcion, fjk, occ1, occng, occ1old2, occngold2
+
+  Implicit None
+  Integer (i4b), Parameter :: nd = id_ndept
+
+  Integer (i4b), Dimension (8, nd) :: tab1, tab2
+
+  Integer (i4b) :: ll, k, j, i, ilow, imax, n, ilev, ind
+
+  Real (dp) :: error
+
+  tab1 = 0
+  tab2 = 0
+
+
+  Do ll = 1, nd !                   including LTE regime
+
+!   selected elements
+    Do k = 1, natom
+      If (jatom_full(k)==0) Cycle
+      ilow = met_imin(k, ll)
+      imax = met_imax(k, ll)
+
+      Do j = ilow, imax
+        If (fjk(k,j,ll)<fracmin) Cycle
+        n = indrec(k, j)
+        ilev = ielev(n)
+        Do i = 1, ilev
+          If (occng(n,i,ll)==0.D0) Then
+            Write (999, *) '1', ll, k, j, i
+            Write (999, *) ' stop: occng eq 0 in calc_changes'
+            Print *, '1', ll, k, j, i
+            Stop ' occng eq 0 in calc_changes'
+          End If
+
+          error = abs(1.D0-occngold2(n,i,ll)/occng(n,i,ll))
+!         for tests
+!         if(k.eq.8 .and. j.eq.3 .and. i.eq.10) then
+!         print*
+!         print*,'change in O3 level 10 at ll = ',ll,' :',error
+!         print*
+!         endif
+          If (error>1.D-16) Then
+            error = log10(error)
+          Else
+            error = -16.D0
+          End If
+
+          If (error>=0.D0) Then
+            ind = 1
+          Else If (error>-1.D0) Then
+            ind = 2
+          Else If (error==-16.D0) Then
+            ind = 8
+          Else If (error<-3.D0) Then
+            ind = 7
+          Else
+            ind = int(2.*abs(error)) + 1
+          End If
+          tab1(ind, ll) = tab1(ind, ll) + 1
+!         if(ind.le.2) write(*,15) ll,k,j,i,error
+        End Do
+      End Do
+      If (fjk(k,imax+1,ll)<fracmin) Go To 100
+      If (occ1(k,imax+1,ll)==0.D0) Then
+        Write (999, *) '1a', ll, k, j, imax + 1
+        Write (999, *) ' stop: occ1 eq 0 in calc_changes'
+        Print *, '1a', ll, k, j, imax + 1
+        Stop ' occ1 eq 0 in calc_changes'
+      End If
+      error = abs(1.D0-occ1old2(k,imax+1,ll)/occ1(k,imax+1,ll))
+      If (error>1.D-16) Then
+        error = log10(error)
+      Else
+        error = -16.D0
+      End If
+
+      If (error>=0.D0) Then
+        ind = 1
+      Else If (error>-1.D0) Then
+        ind = 2
+      Else If (error==-16.D0) Then
+        ind = 8
+      Else If (error<-3.D0) Then
+        ind = 7
+      Else
+        ind = int(2.*abs(error)) + 1
+      End If
+      tab1(ind, ll) = tab1(ind, ll) + 1
+!     if(ind.le.2) write(*,20) ll,k,imax+1,error
+100   Continue
+    End Do
+
+!   approx. elements
+
+    Do k = 1, natom
+      If (jatom_full(k)/=0 .Or. jatom(k)==0) Cycle
+
+      Do j = 1, nion
+        If (calcion(k,j)==0) Cycle
+        If (fjk(k,j,ll)<fracmin) Cycle
+        n = indrec(k, j)
+        ilev = ielev(n)
+        If (occng(n,1,ll)/=0.D0) Then
+          Do i = 1, ilev
+            If (occng(n,i,ll)==0.D0 .And. occngold2(n,i,ll)==0.D0) Then
+              ind = 7
+            Else
+              If (occng(n,i,ll)==0.D0) Print *, '2', ll, k, j, i
+              error = abs(1.D0-occngold2(n,i,ll)/occng(n,i,ll))
+              If (error>1.D-16) Then
+                error = log10(error)
+              Else
+                error = -16.D0
+              End If
+
+              If (error>=0.D0) Then
+                ind = 1
+              Else If (error>-1.D0) Then
+                ind = 2
+              Else If (error==-16.D0) Then
+                ind = 8
+              Else If (error<-3.D0) Then
+                ind = 7
+              Else
+                ind = int(2.*abs(error)) + 1
+              End If
+              tab2(ind, ll) = tab2(ind, ll) + 1
+            End If
+          End Do
+        End If
+      End Do
+    End Do
+
+  End Do
+
+  Print *
+  Print *, 'changes as a function of depth (selected/approx. elements)'
+  Print *, 'only ions with fractions gt ', fracmin, ' considered'
+  Write (*, 110)
+  Do ll = 1, nd
+    Write (*, 120) ll, (tab1(i,ll), tab2(i,ll), i=1, 8)
+  End Do
+  Print *
+
+  Return
+
+! 5  format(' ll       >0       0 ... -1   -1 ... -2   -2 ... -3   -3 ... -4
+! -4 ... -5       <-5')
+110 Format (' ll       >0       0 ... -1   -1...-1.5   -1.5...-2 &
+    &  -2...-2.5   -2.5...-3       <-3        <-16')
+
+120 Format (I3, 8(1X,'|',1X,I4,'/',I4))
+
+130 Format (' large error (osc.) at L = ', I3, ':', 3(2X,I3), 2X, F10.5)
+140 Format (' large error (osc.) at L = ', I3, ':', 2(2X,I3), 2X, '  1', 2X, &
+    F10.5, '  imax+1')
+
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine ludcmp1(a, n, np, indx, d)
+
+  Use :: nlte_type
+  Use :: nlte_app, Only: nlev
+  Implicit None
+
+! .. parameters ..
+  Integer (i4b) :: nmax
+  Parameter (nmax=4*nlev+1)
+! ..
+! .. scalar arguments ..
+  Real (dp) :: d
+  Integer (i4b) :: n, np
+! ..
+! .. array arguments ..
+  Real (dp) :: a(np, np)
+  Integer (i4b) :: indx(n)
+! ..
+! .. local scalars ..
+  Real (dp) :: aamax, dum, summ
+  Integer (i4b) :: i, imax, j, k
+! ..
+! .. local arrays ..
+  Real (dp) :: vv(nmax)
+! ..
+! .. intrinsic functions ..
+! ..
+
+  d = 1.D0
+
+  Do i = 1, n
+    aamax = 0.D0
+    Do j = 1, n
+      If (abs(a(i,j))>aamax) aamax = abs(a(i,j))
+    End Do
+    vv(i) = 1.D0/aamax
+  End Do
+
+jloop: Do j = 1, n
+
+    Do i = 1, j - 1
+      summ = a(i, j)
+
+      Do k = 1, i - 1
+        summ = summ - a(i, k)*a(k, j)
+      End Do
+
+      a(i, j) = summ
+    End Do
+
+    aamax = 0.D0
+
+    Do i = j, n
+      summ = a(i, j)
+
+      Do k = 1, j - 1
+        summ = summ - a(i, k)*a(k, j)
+      End Do
+
+      a(i, j) = summ
+      dum = vv(i)*abs(summ)
+
+      If (dum>=aamax) Then
+        imax = i
+        aamax = dum
+      End If
+    End Do
+
+    If (j/=imax) Then
+
+      Do k = 1, n
+        dum = a(imax, k)
+        a(imax, k) = a(j, k)
+        a(j, k) = dum
+      End Do
+
+      d = -d
+      vv(imax) = vv(j)
+    End If
+
+    indx(j) = imax
+
+    If (a(j,j)==0.) Then
+      Write (999, *) ' stop: matrix singular in ludcmp1'
+      Stop ' matrix singular in ludcmp1'
+    End If
+
+    If (j/=n) Then
+      dum = 1.D0/a(j, j)
+      Do i = j + 1, n
+        a(i, j) = a(i, j)*dum
+      End Do
+    End If
+
+  End Do jloop
+
+  Return
+
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+!PACKAGE FOR PHOTOSPHERIC LINE TRANSFER
+
+!-----------------------------------------------------------------------
+
+Subroutine jbar_metals(xne, dvdr, vr, clf, velo)
+
+! line transfer for background elements: calculation of jbar and alo
+! photosphere: by means of lambda-operator using freq. integrated exp.
+! integrals
+! wind:        using Sobolev approx.
+! interpolation for transition region
+
+! remember: velo, vr, dvdr in absolute numbers
+! dimensionless quantities are r1, velo1, dvdr1
+
+  Use :: nlte_type
+  Use :: fund_const, Only: sigmae, amh, hc2, c_tau
+  Use :: nlte_dim, Only: id_ndept
+  Use :: fastwind_params, Only: fpath, natom
+
+  Use :: nlte_opt, Only: optphotlines_diff
+
+  Use :: run_once, Only: start_jbar_metals
+
+  Use :: nlte_var, Only: modnam, lwion1, opac, xj, xxk, lthin, strue, &
+    thomson_lines, fre
+
+  Use :: nlte_var, Only: corrfc, sr, vmax, vsound, vdiv, ndiv => ndiv_calc
+
+  Use :: nlte_app, Only: nwne, lwion, jatom_full, met_imin, met_imax, indrec, &
+    ielev, irbb, ilin, met_rbb, gstat, occngold, occng, occnglte, vth, louter, &
+    lstat, jbar_bg, alo_bg, temp => te, lomin
+
+  Use :: phot_lines
+
+  Use :: nlte_porvor, Only: epsi1, fic, tcl_fac_line, opa_eff_rat, &
+    opa_eff_rat_old
+
+  Implicit None
+  Integer (i4b), Parameter :: nd = id_ndept
+
+  Real (dp), Parameter :: hc2_8 = hc2*1.D24
+
+  Real (dp), Dimension (nwne), Intent (In) :: xne, dvdr, vr, clf, velo
+
+  Integer (i4b), Dimension (natom) :: ilow, imax, ilow1, imax1
+
+  Integer (i4b) :: i, k, j, n, jj, ii, ll, m1, m2, ind, lo, ls, nlines, &
+    nlcounter, nb, nt, nb1, nt1, nlcounter1, nlcounter_cmf, ji, nx, ilev
+
+  Real (dp), Dimension (nd) :: opal, sline, betap, sc, ajlmean, alo, opac1, &
+    etac
+
+  Real (dp), Dimension (nd), Save :: r, r1, v1, vr1, dvdr1
+
+  Real (dp) :: lam, gf, occlow, occup, tau_mult, tau_mult1, vth1, vo, xxj, &
+    eddf, eddf1, aux1, aux2, mustar, tau, tau0, taub, betacic, beta, beta1, &
+    bnue, betapmin, taulast, xlambda, srvmax, db, dt, gup
+
+  Character (1) :: charlow, charmax
+
+  Real (dp) :: tcl, fac2
+
+  Logical :: first, flag, flagcmf, optdebug
+  Data first/.True./
+  Data optdebug/.False./
+
+  If (lwion1<lwion) Then
+    Write (999, *) ' stop: something wrong with lwion1'
+    Stop ' something wrong with lwion1'
+  End If
+
+  If (nd/=nwne) Then
+    Write (999, *) ' stop: nd ne nwne in jbar_metals'
+    Stop ' nd ne nwne in jbar_metals'
+  End If
+  Print *
+  Print *, ' Radiative transfer for bg. elements: calculation of Jbar and ALO'
+  Print *
+  Print *, ' ions with "!" only VERY approximate'
+
+  If (first) Then
+!   read in tables
+!   only necessary if jbar_phot(integral method) called
+!   presently, we use the differential method, jbar_phot_diff
+    If (optphotlines_diff) Go To 100
+
+    Open (291, File=fpath//'kl_tables/k2atable.dat')
+    Open (292, File=fpath//'kl_tables/l2atable.dat')
+    Open (293, File=fpath//'kl_tables/l2table.dat')
+    Open (294, File=fpath//'kl_tables/l3atable.dat')
+
+    Read (291, *) nb, nt
+    Read (292, *) nb1, nt1
+    Read (293, *) nb1, nt1
+    Read (294, *) nb1, nt1
+
+    If (nb/=nb1) Then
+      Write (999, *) ' stop: error in nb(1)'
+      Stop ' error in nb(1)'
+    End If
+
+    If (nt/=nt1) Then
+      Write (999, *) ' stop: error in nt(1)'
+      Stop ' error in nt(1)'
+    End If
+
+    If (nb/=nbdim) Then
+      Write (999, *) ' stop: error in nb(2)'
+      Stop ' error in nb(2)'
+    End If
+
+    If (nt/=ntdim) Then
+      Write (999, *) ' stop: error in nt(2)'
+      Stop ' error in nt(2)'
+    End If
+
+    Read (291, *) betamin, betamax, db
+    Read (291, *) taumin, taumax, dt
+    Read (291, *) betatab
+    Read (291, *) tautab
+
+    Do i = 1, nb
+      Read (291, *)(xk2atab(i,j), j=1, nt)
+    End Do
+    Do i = 1, nb
+      Read (292, *)(xl2atab(i,j), j=1, nt)
+    End Do
+    Do i = 1, nb
+      Read (293, *)(xl2tab(i,j), j=1, nt)
+    End Do
+    Do i = 1, nb
+      Read (294, *)(xl3atab(i,j), j=1, nt)
+    End Do
+
+    Close (291)
+    Close (292)
+    Close (293)
+    Close (294)
+
+!   calculate profile functions etc. for integration of exponential integrals
+
+    Call xgrid
+
+!   calculate profile functions etc. for jbar_phot_diff
+100 If (optphotlines_diff) Call xgrid_diff
+
+    first = .False.
+  End If
+
+! after each update
+  If (start_jbar_metals) Then
+!   radius grid (in absolute units)
+
+    r = velo/vr
+
+!   dimensionless quantities
+    srvmax = sr/vmax
+    r1 = r/sr
+    If (abs(r1(nd)-1.D0)>1.D-14) Then
+      Write (999, *) ' stop: error in radius grid'
+      Stop ' error in radius grid'
+    End If
+    v1 = velo/vmax
+    vr1 = vr*srvmax
+    dvdr1 = dvdr*srvmax
+
+!   louter and lstat, in dependence of k
+
+    lomin = nd
+    Do k = 1, natom
+      If (jatom_full(k)==0) Cycle
+
+!     this is the outermost point where the hydrostatic, pp rt-solution is
+!     valid
+      If (vth(k)>vsound) Then
+!       large vturb
+        vth1 = vsound
+      Else
+        vth1 = min(vth(k), vdiv*vsound)
+      End If
+!     this is the innermost point where the Sobo-approx is valid
+!     n thermal widths above sonic point
+      vo = vsound + 2.*vth(k) !     factor 2 empirically
+
+      lo = 0
+      ls = 0
+
+      Do ll = nd, 1, -1
+        If (velo(ll)>vo) Then
+          lo = ll
+          Exit
+        End If
+      End Do
+
+      Do ll = nd, 1, -1
+        If (velo(ll)>vth1) Then
+          ls = ll + 1
+          Exit
+        End If
+      End Do
+
+      If (lo==0) Then
+        Write (999, *) ' stop: louter not found'
+        Stop ' louter not found'
+      End If
+
+      If (ls==0) Then
+        Write (999, *) ' stop: lstat not found'
+        Stop ' lstat not found'
+      End If
+
+      If (ndiv==0) Then
+        Write (999, *) ' stop: ndiv = 0 in jbar_metals'
+        Stop ' ndiv = 0 in jbar_metals'
+      End If
+      ls = min0(ls, ndiv)
+
+!     v10.1: next line commented; might happen for very thick winds, &
+!     shouldn't matter then
+!     if (ls.ge.lwion1-1) stop ' lstat(k) ge lwion1-1'
+      If (lo>=ls) Then
+        Write (999, *) ' stop: louter(k) ge lstat(k)'
+        Stop ' louter(k) ge lstat(k)'
+      End If
+
+      lomin = min0(lomin, lo)
+!     lomin no longer needed (but see below)
+
+      louter(k) = lo
+      lstat(k) = ls
+
+    End Do
+
+    start_jbar_metals = .False.
+  End If
+
+! calculate dimension of jbar, alo and allocate
+  nlines = 0
+
+  Do k = 1, natom
+    If (jatom_full(k)==0) Cycle
+
+    ilow(k) = minval(met_imin(k,louter(k):lwion1-1))
+    imax(k) = maxval(met_imax(k,louter(k):lwion1-1))
+    ilow1(k) = ilow(k)
+    imax1(k) = imax(k)
+!   print*,k,ilow(k),imax(k)
+!   do ll=louter(k),lwion1-1
+!   print*,k,ll,met_imin(k,ll),met_imax(k,ll)
+!   enddo
+    If (imax(k)==0) Then
+      If (ilow(k)/=0) Then
+        Write (999, *) ' stop: imax = 0 and ilow ne 0'
+        Stop ' imax = 0 and ilow ne 0'
+      End If
+      Cycle
+    End If
+!   JO March 2023; no longer any stop statement, but non-Sobolev
+!   transport for those ions which have (on average) highest population
+!   that's the old formulation
+!   if(imax(k)-ilow(k) .gt. 3) then
+!   ! assuming a maximum of 5 stages in parallel
+!   if(imax(k)-ilow(k) .gt. 4) then
+!   print*,k,ilow(k),imax(k)
+!   stop ' more than 5 stages in parallel'
+!   endif
+!   do ll=louter(k),lwion1-1
+!   print*,k,ll,met_imin(k,ll),met_imax(k,ll)
+!   enddo
+!   print*,' more than 4 ionization stages present in lower atmosphere!'
+!   print*,' lower and uppermost only in Sobo'
+!   endif
+
+!   that's the new one (actually valid, needs to be updated in v10
+
+    If (imax(k)-ilow(k)>2) Then
+      nx = lwion1 - louter(k)
+      ilow1(k) = nint(sum(met_imin(k,louter(k):lwion1-1))/float(nx))
+      imax1(k) = nint(sum(met_imax(k,louter(k):lwion1-1))/float(nx))
+      If (imax1(k)-ilow1(k)>2) Then
+!       only "3" (= 4 ions) allowed (different reasons), but not more;
+!       completely changed, see subr. select
+        If (imax1(k)-ilow1(k)/=3) Then
+!         if(imax1(k)-ilow1(k).gt.2) then
+!         JO May 2025
+!         if(optxray.and.k.eq.8.and.imax1(k)-ilow1(k).eq.3) then
+!         continue
+!         JO July 2025
+!         else if(k.eq.7.and.imax1(k)-ilow1(k).eq.3) then
+!         continue ! "allowed"
+!         else if(imax1(k)-ilow1(k).eq.3) then
+!         continue ! "allowed"
+!         else
+          Write (999, *) k, imax1(k) - ilow1(k)
+          Write (999, *) met_imin(k, louter(k):lwion1-1)
+          Write (999, *) met_imax(k, louter(k):lwion1-1)
+          Write (999, *) ilow1(k), ' ', imax1(k)
+          Write (999, *) &
+            ' stop: something rotten in ilow1, imax1 (subr. jbar_metals)'
+          Print *, k, imax1(k) - ilow1(k)
+          Print *, met_imin(k, louter(k):lwion1-1)
+          Print *, met_imax(k, louter(k):lwion1-1)
+          Print *, ilow1(k), ' ', imax1(k)
+          Stop ' something rotten in ilow1, imax1 (subr. jbar_metals)'
+!         endif
+        End If
+      End If
+    End If
+
+!   JO changed Oct. 2025: output for all elements, not only for those with
+!   more than 3 ions
+    Do ll = louter(k), lwion1 - 1
+      charlow = ' '
+      charmax = ' '
+      If (met_imin(k,ll)>ilow1(k)) charlow = '!'
+      If (met_imax(k,ll)<imax1(k)) charmax = '!'
+      Write (*, 120) k, ll, met_imin(k, ll), met_imax(k, ll), ilow1(k), &
+        charlow, imax1(k), charmax
+    End Do
+
+    Do j = ilow(k), imax(k)
+      n = indrec(k, j)
+      nlines = nlines + ilin(n)
+    End Do
+  End Do
+
+  Print *, ' ', nlines, ' lines considered'
+  Print *
+
+  If (allocated(jbar_bg)) Deallocate (jbar_bg, alo_bg)
+
+! lot of ram spent, but most simple way.
+! actually, for phot. RT we would need only nlcounter1 * (lomin:lwion1)
+! variables, &
+! and for cmf RT we would need only nlcounter_cmf * (1:lwion1) variables.
+! Since we do not know nlcounter1 and nlcounter_cmf in advance, this would
+! require some good guesses.
+! Delayed until required.
+
+! lwion1 for indicator
+  Allocate (jbar_bg(nlines,1:lwion1), alo_bg(nlines,1:lwion1))
+
+
+! prepare radiation transfer
+! for cmf-tests
+  If (optdebug) Open (200, File='OUT.IDL')
+  Open (201, File=trim(modnam)//'/BG_LINES.CMF')
+
+  nlcounter = 0
+  nlcounter1 = 0
+  nlcounter_cmf = 0
+
+! reset index at each iteration, to avoid leftovers from previous calcs.
+  met_rbb(:)%index_jbar = 0
+
+kloop: Do k = 1, natom
+
+    If (jatom_full(k)==0) Cycle kloop
+    If (imax(k)==0) Cycle kloop
+
+jloop: Do j = ilow(k), imax(k)
+
+      n = indrec(k, j)
+      ilev = ielev(n)
+      jj = irbb(n) - 1
+
+iiloop: Do ii = 1, ilin(n)
+!       opacities and soure functions
+        ji = jj + ii
+        m1 = met_rbb(ji)%low
+        m2 = met_rbb(ji)%lup
+        lam = met_rbb(ji)%wave
+        gf = met_rbb(ji)%gf
+        ind = met_rbb(ji)%index
+        gup = gstat(k, j, m2)
+
+!       outside freq. range; will be approximated in Sobo -> subroutine netmat
+        If (ind==0) Cycle iiloop
+        xlambda = 1.D8/fre(ind)
+
+        nlcounter = nlcounter + 1
+        met_rbb(ji)%index_jbar = nlcounter
+
+!       all depth points, since cmf transfer required for strong lines
+!       --------------------------------------------------------
+
+!       do ll=louter(k),nwne
+        Do ll = 1, nwne
+
+          If (occngold(n,1,ll)==0.) Then ! start, change of ionization stages
+            occlow = occng(n, m1, ll)
+!           check consistency
+          Else
+            occlow = occngold(n, m1, ll)
+          End If
+
+          If (occlow==0.) Then
+!           outside considered ionization
+!           if(j.ge.met_imin(k,ll) .and. j.le.met_imax(k,ll)) &
+!           &              stop ' routine jbar_metals: error in occng'
+            occlow = occnglte(n, m1, ll)
+            If (occlow==0.) Then
+              Write (999, *) ' stop: routine jbar_metals: error in occnglte'
+              Stop ' routine jbar_metals: error in occnglte'
+            End If
+            If (ll<lstat(k)) occlow = occlow/100. ! to avoid wrong impact in
+!           transition region
+          End If
+
+          If (occngold(n,1,ll)==0.) Then ! start, change of ionization stages
+            occup = occng(n, m2, ll)
+!           check consistency
+          Else
+            occup = occngold(n, m2, ll)
+          End If
+
+          If (occup==0.) Then
+!           outside considered ionization
+!           if(j.ge.met_imin(k,ll) .and. j.le.met_imax(k,ll)) &
+!           &              stop ' routine jbar_metals: error in occng'
+            occup = occnglte(n, m2, ll)
+            If (occup==0.) Then
+              Write (999, *) ' stop: routine jbar_metals: error in occnglte'
+              Stop ' routine jbar_metals: error in occnglte'
+            End If
+            If (ll<lstat(k)) occup = occup/100. ! to avoid wrong impact in
+!           transition region
+          End If
+
+          tau_mult1 = gf*lam/clf(ll)
+          If (occlow>occup) Then
+            tau_mult = tau_mult1*(occlow-occup)
+          Else
+            tau_mult = tau_mult1*occlow
+          End If
+
+          xxj = xj(ll, ind)
+
+          opal(ll) = tau_mult*c_tau/vth(k)
+!         optically thick clumping as before
+          tcl = tau_mult*c_tau*tcl_fac_line(ll)
+          fac2 = (1.+fic(ll)*tcl)/(1.+tcl)
+          If (opa_eff_rat(ll,ind)/=opa_eff_rat_old(ll,ind)) Then
+            Write (999, *) &
+              ' stop: opa_eff_rat .ne. opa_eff_rat_old in jbar_metals'
+            Stop ' opa_eff_rat .ne. opa_eff_rat_old in jbar_metals'
+          End If
+          fac2 = min(fac2, opa_eff_rat(ll,ind))
+          If (fac2>epsi1 .Or. fac2<=0.D0) Then
+            Write (999, *) fac2, opa_eff_rat(ll, ind), ll, ind
+            Write (999, *) ' stop: eff_opa > <opa> in jbar_metals_1'
+            Print *, fac2, opa_eff_rat(ll, ind), ll, ind
+            Stop 'eff_opa > <opa> in jbar_metals_1'
+          End If
+          opal(ll) = opal(ll)*fac2
+!         effective opacity
+          If (ll<lwion1) Then
+            If (occlow>occup) Then
+              sline(ll) = hc2_8/lam**3/(occlow/occup-1.D0)
+            Else
+              sline(ll) = bnue(lam, temp(ll))
+            End If
+          Else
+!           to be consistent with radiation field.
+!           Note that lam might be not consistent with Delta E (due to
+!           packing), &
+!           since lam refers to the transition with the strongest gf value, &
+!           whereas the LTE occupation numbers are calculated according to the
+!           given
+!           energy levels. In other words, Bnue(lam) ne Sline (occlte).
+!           Example: SiV, transition 19 to 14 (ii=323): lam = 2844, whereas
+!           Delta E
+!           corresponds to 3324.
+
+!           Note: maybe, we will need here even a change to lambda(ind)
+            sline(ll) = bnue(lam, temp(ll))
+          End If
+
+          opac1(ll) = opac(ll, ind)
+!         this is the EFFECTIVE opac from previous iteration
+
+          betap(ll) = opac1(ll)/opal(ll) ! corrected
+!         both opac, opal are corrected
+!         caution: since not necessarily the same reduction,
+!         (max tcl option for opal) ratio may not be preserved.
+
+!         sc(ll) = strue(ll,ind)+xxj*(xne(ll)*sigmae*amh/clf(ll)+ &
+!         &          thomson_lines(ll,ind))/opac(ll,ind)   !corrected
+!         since ONLY opac is corrected, need to back-correct
+          sc(ll) = strue(ll, ind) + xxj*(xne(ll)*sigmae*amh/clf(ll)+ &
+            thomson_lines(ll,ind))/opac(ll, ind)*opa_eff_rat(ll, ind) ! back-corrected
+
+!         print*,k,j,ii,ll,opal(ll),sline(ll),betap(ll),sc(ll)
+
+          etac(ll) = opac1(ll)*sc(ll)
+
+!         --------------------------------------------------------
+
+!         calculation of Sobolev quantity at louter (needed for interpolation)
+!         identical approach as in netmat (checked there)
+
+
+          If (ll==louter(k)) Then
+
+            eddf = xxk(ll, ind)/xxj
+            If (ll<lthin(ind)) Then
+!             mustar=1.d0-2.d0*dilfac (checked, correct, but irrelevant)
+              aux1 = velo(lthin(ind))/vr(lthin(ind))
+              aux2 = velo(ll)/vr(ll)
+!             JO: I don't understand the next comment any longer, might be a
+!             typo
+!             mustar=1.d0-(aux2/aux1)**2*(1.d0-mustar**2) ! correction for
+!             lthin
+              mustar = 1. - (aux1/aux2)**2 ! correction for lthin (correct)
+              mustar = sqrt(mustar)
+              eddf1 = (1.D0-mustar**3)/3.D0/(1.D0-mustar) ! checked, correct
+!             if(eddf/eddf1.gt.2.) & ! eddf1 lower
+!             print*,'problem with eddf',lam,ll,lthin(ind),eddf,eddf1
+!             aux1=(eddf*dvdr+(1.-eddf)*vr)
+!             aux2=(eddf1*dvdr+(1.-eddf1)*vr)
+!             if(aux1/aux2.gt.3.) then ! problems only if aux2 lower
+!             print*,'problem with
+!             taub',lam,ll,lthin(ind),eddf,eddf1,aux1,aux2
+              eddf = eddf1
+!             endif
+            End If
+
+!           stimulated emission neglected, to be consistent with netmat
+            tau_mult = gf*lam*occlow/clf(ll)
+!           again using max tcl
+            tcl = tau_mult*c_tau*tcl_fac_line(ll)
+            fac2 = (1.+fic(ll)*tcl)/(1.+tcl)
+!           indentity of opa_eff_rat and opa_eff_rat_old already checked above
+            fac2 = min(fac2, opa_eff_rat(ll,ind))
+            If (fac2>epsi1 .Or. fac2<=0.D0) Then
+              Write (999, *) fac2, opa_eff_rat(ll, ind), ll, ind
+              Write (999, *) ' stop: eff_opa > <opa>, jbar_metals_2'
+              Print *, fac2, opa_eff_rat(ll, ind), ll, ind
+              Stop 'eff_opa > <opa>, jbar_metals_2'
+            End If
+            tau_mult = tau_mult*fac2
+!           effective opacity
+            taub = c_tau*tau_mult/(eddf*dvdr(ll)+(1.-eddf)*vr(ll)) ! at mue^2
+!           = eddf
+            If (taub<1.D-5) Then
+              betacic = xxj
+            Else
+              betacic = (1.-exp(-taub))/taub*xxj
+            End If
+
+            tau0 = c_tau/(dvdr(ll)/3.+2./3.*vr(ll)) ! at mue^2 = 1/3
+            tau = tau0*tau_mult !   at mue^2 = 1/3
+
+            If (tau<1.D-5) Then
+              beta = 1.
+              beta1 = 0.5*tau !     expanded
+            Else
+              beta = (1.-exp(-tau))/tau
+              beta1 = 1. - beta
+            End If
+
+            jbar_bg(nlcounter, ll) = betacic
+            alo_bg(nlcounter, ll) = 1. - beta ! to be consistent with netmat
+          End If !                  sobo quantities
+!         --------------------------------------------------------
+
+        End Do !                    depth loop
+
+!       --------------------------------------------------------
+
+!       calculation of jbar and alo (including interpolation within louter,
+!       lstat)
+!       actually, jbar-alo*sline is calculated
+
+!       flag = .true.    -- jbar(phot) calculated         (implies flagcmf =
+!       .false.
+!       flag = .false.   -- weak line, Sobo sufficient    (implies flagcmf =
+!       .false.)
+
+!       flagcmf = .true. -- very strong line, cmf required (implies flag=
+!       .false.)
+
+!       JO March 2023 (see above)
+!       if(imax(k)-ilow(k) .gt. 3) then
+!       if (j.eq.ilow(k) .or. j.eq.imax(k)) then
+        If (imax(k)-ilow(k)>2) Then
+          If (j<ilow1(k) .Or. j>imax1(k)) Then
+!           only Sobo
+!           opacities for ions with met_ilow(k,ll) > ilow1(k) or
+!           met_imax(k,ll) < imax1(k)
+!           (often encountered) only very approx (LTE or LTE/100).
+!           example:
+!           in outer part: 4-6, in major part 3-5, and in innermost part 5-7
+!           in this case, ilow-imax=3-7,ilow1-imax1=3-5
+!           only ion that is always present is 5.
+!           To improve situation we perform transport for all ions between 3-5
+!           in this case, opacities for ions 3 in outer part wrong (4,5
+!           correct)
+!           (since exact only for 4-6, but 6 with SA)
+!           and opacities for ions 3,4 in innermost part wrong (5 correct)
+!           (since exact only for 5-7, but 6,7 with SA)
+            flag = .False.
+!           JO May 2023: next statement included (was forgotten, and lead
+!           to errors with ifort
+            flagcmf = .False.
+            Go To 110
+          End If
+        End If
+
+        betapmin = minval(betap(lstat(k):lwion1-1))
+
+        If (betapmin>1.D3) Then
+!         tested; for beta > betapmin Sobo-solution OK
+          flag = .False.
+          flagcmf = .False.
+        Else
+
+!         write(*,10) 'new line',k,j,ii,louter(k),lstat(k),lam,betapmin
+
+!         this is the differential method
+          If (optphotlines_diff) Then
+            Call jbar_phot_diff(ajlmean, alo, r, velo, temp, opal, sline, &
+              betap, sc, beta1, betacic, louter(k), lstat(k), xlambda, &
+              corrfc, flag, flagcmf)
+          Else
+!           this is the integral method
+            Call jbar_phot(ajlmean, alo, r, velo, opal, sline, betap, opac1, &
+              sc, beta1, betacic, louter(k), lstat(k), taulast, flag, &
+              flagcmf)
+          End If
+          If (flag) Then
+!           check for negative jbar
+            Do ll = louter(k), nd
+              If (ajlmean(ll)<0.) Then
+                Print *, 'jbar-alo*sline < 0 (jbar_phot)'
+                Print *, ll, ajlmean(ll), alo(ll), sline(ll)
+                Write (*, 130) 'line-err', k, j, ii, louter(k), lstat(k), lam, &
+                  betapmin
+                Print *, ' needs to be calculated in cmf'
+                flagcmf = .True.
+                flag = .False.
+!               stop ' jbar-alo*sline < 0'
+              End If
+            End Do
+          End If
+        End If
+
+        If (flagcmf) Then
+          nlcounter_cmf = nlcounter_cmf + 1
+!         write(*,11) flag,flagcmf,k,j,ii,louter(k),1.-beta,betacic
+          Write (201, 130) 'cmf line', k, j, ii, louter(k), lstat(k), lam, &
+            betapmin
+          If (flag) Then
+            Write (999, *) ' stop: something wrong in flag policy'
+            Stop ' something wrong in flag policy'
+          End If
+          Call cmf_simple(ajlmean, alo, r1, vr1, dvdr1, temp, opal, sline, &
+            opac1, etac, sc, vth(k), xlambda, corrfc, betapmin)
+!         check for negative jbar
+          Do ll = 1, nd
+            If (ajlmean(ll)<0.) Then
+!             JO July 2025: next if-block might need to be included in future
+!             versions
+!             if(abs(ajlmean(ll)).lt.1.d-10) then
+!             ajlmean(ll)=0.
+!             else
+              Write (999, *) 'jbar-alo*sline < 0 (jbar_cmf)'
+              Write (999, *) ll, ajlmean(ll), alo(ll), sline(ll)
+              Write (999, 130) 'line-err', k, j, ii, louter(k), lstat(k), lam, &
+                betapmin
+              Write (999, *) ' stop: jbar-alo*sline < 0'
+              Print *, 'jbar-alo*sline < 0 (jbar_cmf)'
+              Print *, ll, ajlmean(ll), alo(ll), sline(ll)
+              Write (*, 130) 'line-err', k, j, ii, louter(k), lstat(k), lam, &
+                betapmin
+              Stop ' jbar-alo*sline < 0'
+!             endif
+            End If
+          End Do
+
+!         print*,k,j,ii,lam
+!         do ll=1,nd
+!         print*,ll,ajlmean(ll),alo(ll)
+!         enddo
+
+        End If
+
+!       ---------------------------------------------
+!       for tests (comparison with external cmf-solution)
+        If (optdebug) Then
+          If (flagcmf) Then
+!           if(betapmin.lt.1000.) then
+!           if(k.eq.18.and.j.eq.7.and.ii.eq.220) then
+!           aux2 = rraic
+            Print *
+            Print *, 'new line', k, j, ii, lam, betapmin
+!           call
+!           cmf_ext(opal*vth(k),sline,opac1,etac,xlambda,k,aux2,xxj,flagcmf)
+            If (.Not. flagcmf) Then
+              Write (200, 150) 'new line', k, j, ii, louter(k), lam, betapmin, &
+                betacic/beta*aux2
+!             else
+!             nlcounter_cmf=nlcounter_cmf+1
+!             write(201,*) 'cmf line-transfer required',k,j,ii,lam,betapmin
+            End If
+          End If
+        End If
+!       ---------------------------------------------
+
+110     If (.Not. flag .And. .Not. flagcmf) Then
+!         this is the indicator that line needs to be treated in Sobo
+          jbar_bg(nlcounter, lwion1) = 1.D0
+        Else
+
+          nlcounter1 = nlcounter1 + 1
+
+          If (flagcmf) Then
+!           this is the indicator that line has been treated in cmf
+            jbar_bg(nlcounter, lwion1) = 3.D0
+!           results from cmf_simple
+            Do ll = 1, lwion1 - 1
+!             this quantity is jbar-alo*sline
+              jbar_bg(nlcounter, ll) = ajlmean(ll)
+              alo_bg(nlcounter, ll) = alo(ll)
+            End Do
+
+          Else
+!           final consistency check
+            If (.Not. flag) Then
+              Write (999, *) ' stop: something really rotten with flag'
+              Stop ' something really rotten with flag'
+            End If
+!           this is the indicator that line has been treated in phot. approx.
+            jbar_bg(nlcounter, lwion1) = 2.D0
+!           results from jbar_phot, interpolated until louter(k)
+!           per definition, sobo and RT quantities are identical at louter(k).
+!           Checked.
+            Do ll = louter(k) + 1, lwion1 - 1
+!             this quantity is jbar-alo*sline
+              jbar_bg(nlcounter, ll) = ajlmean(ll)
+              alo_bg(nlcounter, ll) = alo(ll)
+            End Do
+          End If
+        End If
+      End Do iiloop
+
+    End Do jloop
+
+  End Do kloop
+
+  If (nlcounter>nlines) Then
+    Write (999, *) ' stop: nlcounter > nlines'
+    Stop ' nlcounter > nlines'
+  End If
+
+  Write (999, *)
+  Write (999, *) '     nlcounter = ', nlcounter, &
+    ' (all lines from selected bg elements)'
+  Write (999, *) '    nlcounter1 = ', nlcounter1, &
+    ' (lines from selected bg elements with RT)'
+  Write (999, *) ' nlcounter_cmf = ', nlcounter_cmf, &
+    ' (lines from selected bg elements with CMF-RT)'
+  Write (999, *)
+  Print *
+  Print *, '     nlcounter = ', nlcounter, &
+    ' (all lines from selected bg elements)'
+  Print *, '    nlcounter1 = ', nlcounter1, &
+    ' (lines from selected bg elements with RT)'
+  Print *, ' nlcounter_cmf = ', nlcounter_cmf, &
+    ' (lines from selected bg elements with CMF-RT)'
+  Print *
+
+  If (optdebug) Close (200)
+  Close (201)
+
+  Return
+
+120 Format (4(I3,2X), ' non-SA transport for ', 2(I3,A1,2X))
+
+
+130 Format (A9, 2X, 5(I3,2X), F10.2, 2X, 1(E9.3,2X))
+140 Format (2(L1,2X), 4(I3,2X), 2(E10.4,2X))
+150 Format (A9, 2X, 4(I3,2X), F10.2, 2X, 2(E9.3,2X))
+
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine jbar_phot(ajlmean, alo, r, velo, opal, sline, beta, opac, sc, ps1, &
+  betacic, louter, lstatin, taulast, flag, flagcmf)
+
+! NOTE!!!
+! this routine solves the R.T. down to ND. Actually, this is not necessary
+! (lowermost point which needs to be considered is LWION1-1)
+! might be changed in future; due to speed of routine, presently not
+! necessary.
+! When this is changed, attention must be paid regarding the construction
+! of the upper triangle of the Lambda matrix (iend etc)
+
+! calculates jbar and alo from constructing the lambda operator via frequency
+! integrated exponential integrals
+
+! output is jbar-alo*sline and alo
+
+! consistency to cmf-transport has been carefully checked
+! between louter and lstat, an interpolation between static and Sobolev
+! transfer is performed.
+! test programs located in oldstuff_lrz/test_new
+
+! r and v in absolute units
+
+! here, beta is opac/opal, and ps1 is 1.-beta(sob) at louter(kel)
+
+! somewhere, there is a bug for alo(nd). it should be a factor of two larger
+! than calculated here.
+
+  Use :: nlte_type
+  Use :: nlte_dim, Only: id_ndept
+  Use :: phot_lines, Only: fac, neglect
+
+  Implicit None
+  Integer (i4b), Parameter :: nd = id_ndept
+
+  Real (dp), Dimension (nd), Intent (In) :: r, velo, opal, sline, beta, opac, &
+    sc
+  Real (dp), Dimension (nd), Intent (Out) :: ajlmean, alo
+
+  Integer (i4b), Intent (In) :: louter, lstatin
+  Real (dp), Intent (In) :: ps1, betacic
+
+  Logical, Intent (Out) :: flag, flagcmf
+
+  Real (dp), Dimension (nd) :: taunue
+  Real (dp), Dimension (nd+1) :: z, tauz, taucz
+
+  Real (dp), Dimension (:, :), Allocatable :: lamline, lamcont, betaq
+  Real (dp), Dimension (:), Allocatable :: ibeta
+  Integer (i4b), Dimension (:), Allocatable :: istart, iend
+
+  Real (dp) :: del, dt, tau, tauzj, bi, taulast, bet, betq1, betq2, betqm, &
+    tau1, tau2, dt1, dt2, change, rat, e1, dv, xouter1, xinner1, bb1, xouter2, &
+    xinner2, bb2, term1, term2, rstar, xk21, xl21, xk22, xl22, xk20, xl20, &
+    xl3a, aic
+
+  Real (dp) :: xk2a, xk2a_simple, xl2
+
+  Integer (i4b) :: ndstat, l, i, li, j, lj, is1, ie1, ii, lstat
+
+  Logical :: done
+
+! for the complete range, to avoid edge effects
+  lstat = louter
+
+  ndstat = nd - lstat + 1
+
+  ajlmean = 0.
+
+! tau-grid for all depth points
+  taunue(1) = 1.D-8
+
+  Do l = lstat, nd - 1
+    i = l + 1 - lstat
+    del = r(l) - r(l+1)
+    dt = del*0.5*(opal(l)+opal(l+1))
+    taunue(i+1) = taunue(i) + dt
+  End Do
+
+! do i=1,ndstat
+! l=i+lstat-1
+! print*,i,l,taunue(i),beta(l)
+! enddo
+! print*,'new line',taunue(ndstat)
+  taulast = taunue(ndstat)
+
+  If (taulast<1.) Then
+!   line very weak, Sobo sufficient
+    flag = .False.
+    flagcmf = .False.
+    Return
+  End If
+
+  If (taunue(3)>1.) Then
+!   optically thick around louter, needs cmf transfer
+    flag = .False.
+    flagcmf = .True.
+    Return
+  End If
+
+
+! staggered grid and corresponding tau
+  z(1) = r(lstat)
+  Do l = lstat + 1, nd
+    i = l + 1 - lstat
+    z(i) = 0.5*(r(l-1)+r(l))
+  End Do
+  z(ndstat+1) = r(nd)
+
+  tauz(1) = taunue(1)
+  taucz(1) = 0.
+  Do i = 1, ndstat
+    l = i + lstat - 1
+    del = z(i) - z(i+1)
+    dt = del*opal(l)
+    tauz(i+1) = tauz(i) + dt
+    taucz(i+1) = taucz(i) + del*opac(l)
+  End Do
+
+! check consistency
+  If (abs(taunue(ndstat)-tauz(ndstat+1))>1.D-5) Then
+    Write (999, *) ' stop: error in staggered grid'
+    Stop ' error in staggered grid'
+  End If
+
+  tauz(ndstat+1) = taunue(ndstat) ! numerics
+
+  Allocate (ibeta(ndstat), istart(ndstat+1), iend(0:ndstat))
+  Allocate (lamline(ndstat,ndstat), lamcont(ndstat,ndstat), &
+    betaq(ndstat,ndstat+1))
+  lamline = 0.
+  lamcont = 0.
+
+! pre-calculate ibeta = int_tau_out^tau (beta)
+  ibeta(1) = 0.
+  Do i = 2, ndstat
+    li = i + lstat - 1
+!   this is the version if beta is integrated over tau-line
+!   ibeta(i)=ibeta(i-1)+0.5*(beta(li-1)+beta(li))*(taunue(i)-taunue(i-1))
+    ibeta(i) = ibeta(i-1) + 0.5*(opac(li-1)+opac(li))*(r(li-1)-r(li))
+  End Do
+
+! do i=1,ndstat
+! write(*,11) i+lstat-1,taunue(i),tauz(i),ibeta(i),taucz(i),beta(i+lstat-1)
+! enddo
+! 11 format(i2,5(2x,e9.3))
+
+  Do i = 1, ndstat
+    tau = taunue(i)
+    li = i + lstat - 1
+    Do j = 1, ndstat + 1
+      lj = j + lstat - 1
+      tauzj = tauz(j)
+!     print*,i,j,tau,tauzj
+      dt = tau - tauzj
+      If (abs(dt)<1.D-13) dt = sign(1.D-13, dt) ! numerical precision
+
+      If (i==1 .And. j==1 .Or. i==ndstat .And. j==ndstat+1) Then
+        betaq(i, j) = beta(li)
+
+!       else if (abs(dt).lt.1.d-12) then !numerical precision
+!       betaq(i,j)=beta(li)
+
+      Else
+
+        If (dt>0.) Then
+          If (j/=1) Then
+!           this is the version if beta is integrated over tau-line
+!           bi=(0.25*beta(lj-1)+0.75*beta(lj))*(taunue(j)-tauzj)+ibeta(i)-ibeta(j)
+            bi = ibeta(i) - taucz(j)
+          Else
+            If (taunue(j)-tauzj/=0) Then
+              Write (999, *) ' stop: betaq: error 1'
+              Stop ' betaq: error 1'
+            End If
+            bi = ibeta(i) - ibeta(j)
+          End If
+          betaq(i, j) = bi/dt
+
+        Else If (dt<0.) Then
+          If (j/=ndstat+1) Then
+!           this is the version if beta is integrated over tau-line
+!           bi=ibeta(j-1)-ibeta(i)+(0.75*beta(lj-1)+0.25*beta(lj))*(tauzj-taunue(j-1))
+            bi = taucz(j) - ibeta(i)
+          Else
+            If (tauzj-taunue(j-1)/=0) Then
+              Write (999, *) ' stop: betaq: error 2'
+              Stop ' betaq: error 2'
+            End If
+            bi = ibeta(j-1) - ibeta(i)
+          End If
+          betaq(i, j) = -bi/dt
+
+        Else
+
+!         might happen for very weak lines
+!         if(tau.lt.1.d-7 .and. tauzj.lt.1.d-7) then
+!         flag=.false.
+!         flagcmf=.false.
+!         return
+!         endif
+!         otherwise
+          Print *, i, j, ndstat, tau, tauzj
+          Print *
+          Do ii = 1, ndstat
+            l = ii + lstat - 1
+            Print *, ii, l, taunue(ii), beta(l)
+          End Do
+!         flag=.false.
+!         flagcmf=.false.
+!         return
+          Write (999, *) ' stop: no path to here'
+          Stop ' no path to here'
+        End If
+
+      End If
+
+      If (betaq(i,j)<0.) Then
+!       numerical problems (might also lead to dt<0 below)
+!       thus
+        flag = .False.
+        flagcmf = .True.
+        Return
+      End If
+    End Do
+  End Do
+
+! build up lambda matrix (assuming constant S over staggered grid)
+! icount1=0
+! icount2=0
+
+  istart(1) = 1
+  istart(2) = 1
+  Do i = 2, ndstat
+    tau = taunue(i)
+    done = .False.
+    Do j = istart(i), i - 1
+!     do j=1,i-1
+!     lower triangle (radiation from above)
+      l = j + lstat - 1
+      bet = beta(l)
+      betq1 = betaq(i, j)
+      betq2 = betaq(i, j+1)
+      betqm = 0.5*(betq1+betq2)
+      tau1 = tauz(j)
+      tau2 = tauz(j+1)
+      dt1 = (tau-tau1)
+      dt2 = (tau-tau2)
+      change = betq1/betq2
+      If (change>fac .Or. change<1./fac) Then
+!       print*,'1',i,j,bet,betq1,betq2,xk21,xl21
+        If (bet>5.) Then
+          If (betq1>5.) Then
+            rat = betq1/bet
+!           icount2=icount2+1
+            xk21 = xk2a(betq1, dt1, xl21)
+            xk21 = xk21*rat
+            xl21 = xl21*rat
+          Else
+!           icount1=icount1+1
+            xk21 = xk2a_simple(betq1, bet, dt1, xl21)
+          End If
+
+          If (betq2>5.) Then
+            rat = betq2/bet
+!           icount2=icount2+1
+            xk22 = xk2a(betq2, dt2, xl22)
+            xk22 = xk22*rat
+            xl22 = xl22*rat
+          Else
+!           icount1=icount1+1
+            xk22 = xk2a_simple(betq2, bet, dt2, xl22)
+          End If
+        Else
+!         icount1=icount1+2
+          xk21 = xk2a_simple(betq1, bet, dt1, xl21)
+          xk22 = xk2a_simple(betq2, bet, dt2, xl22)
+        End If
+      Else
+!       icount2=icount2+2
+        xk21 = xk2a(betqm, dt1, xl21)
+        xk22 = xk2a(betqm, dt2, xl22)
+      End If
+      lamline(i, j) = (xk22-xk21)
+      lamcont(i, j) = bet*(xl22-xl21)
+      If (.Not. done) Then
+        If (lamline(i,j)>neglect .Or. lamcont(i,j)>neglect) Then
+          istart(i+1) = j
+          done = .True.
+        End If
+      End If
+    End Do
+    If (.Not. done) istart(i+1) = i - 1
+  End Do
+
+  Do i = 1, ndstat
+    tau = taunue(i)
+!   diagonal (local radiation)
+    j = i
+    l = j + lstat - 1
+    bet = beta(l)
+    betq1 = betaq(i, j)
+    betq2 = betaq(i, j+1)
+    betqm = 0.5*(betq1+betq2)
+    tau1 = tauz(j)
+    tau2 = tauz(j+1)
+    dt1 = (tau-tau1)
+    dt2 = (tau2-tau)
+!   tau inside interval, change of sign
+!   icount2=icount2+1
+    xk20 = xk2a(bet, 0.D0, xl20) !  always, since only dependent on bet
+    change = betq1/betq2
+    If (change>fac .Or. change<1./fac) Then
+!     print*,'2',i,j,bet,betq1,betq2
+      If (bet>5.) Then
+        If (betq1>5.) Then
+          rat = betq1/bet
+!         icount2=icount2+1
+          xk21 = xk2a(betq1, dt1, xl21)
+          xk21 = xk21*rat
+          xl21 = xl21*rat
+        Else
+!         icount1=icount1+1
+          xk21 = xk2a_simple(betq1, bet, dt1, xl21)
+        End If
+
+        If (betq2>5.) Then
+          rat = betq2/bet
+!         icount2=icount2+1
+          xk22 = xk2a(betq2, dt2, xl22)
+          xk22 = xk22*rat
+          xl22 = xl22*rat
+        Else
+!         icount1=icount1+1
+          xk22 = xk2a_simple(betq2, bet, dt2, xl22)
+        End If
+      Else
+!       icount1=icount1+2
+        xk21 = xk2a_simple(betq1, bet, dt1, xl21)
+        xk22 = xk2a_simple(betq2, bet, dt2, xl22)
+      End If
+    Else
+!     icount2=icount2+2
+      xk21 = xk2a(bet, dt1, xl21)
+      xk22 = xk2a(bet, dt2, xl22)
+    End If
+    lamline(i, i) = 2.D0*xk20 - xk21 - xk22
+    lamcont(i, i) = bet*(2.D0*xl20-xl21-xl22)
+    If (lamline(i,i)<=0.) lamline(i, i) = 1.E-10
+    If (lamcont(i,i)<=0.) lamcont(i, i) = 1.E-10
+  End Do
+
+  iend(ndstat) = ndstat
+  iend(ndstat-1) = ndstat
+  Do i = ndstat - 1, 1, -1
+    tau = taunue(i)
+    done = .False.
+    Do j = iend(i), i + 1, -1
+!     do j=ndstat,i+1,-1
+!     upper triangle (radiation from below)
+      l = j + lstat - 1
+      bet = beta(l)
+      betq1 = betaq(i, j)
+      betq2 = betaq(i, j+1)
+      betqm = 0.5*(betq1+betq2)
+      tau1 = tauz(j)
+      tau2 = tauz(j+1)
+      dt1 = (tau1-tau)
+      dt2 = (tau2-tau)
+      change = betq1/betq2
+      If (change>fac .Or. change<1./fac) Then
+!       print*,'3',i,j,bet,betq1,betq2
+        If (bet>5.) Then
+          If (betq1>5.) Then
+            rat = betq1/bet
+!           icount2=icount2+1
+            xk21 = xk2a(betq1, dt1, xl21)
+            xk21 = xk21*rat
+            xl21 = xl21*rat
+          Else
+!           icount1=icount1+1
+            xk21 = xk2a_simple(betq1, bet, dt1, xl21)
+          End If
+
+          If (betq2>5.) Then
+            rat = betq2/bet
+!           icount2=icount2+1
+            xk22 = xk2a(betq2, dt2, xl22)
+            xk22 = xk22*rat
+            xl22 = xl22*rat
+          Else
+!           icount1=icount1+1
+            xk22 = xk2a_simple(betq2, bet, dt2, xl22)
+          End If
+        Else
+!         icount1=icount1+2
+          xk21 = xk2a_simple(betq1, bet, dt1, xl21)
+          xk22 = xk2a_simple(betq2, bet, dt2, xl22)
+        End If
+      Else
+!       icount2=icount2+2
+        xk21 = xk2a(betqm, dt1, xl21)
+        xk22 = xk2a(betqm, dt2, xl22)
+      End If
+      lamline(i, j) = (xk21-xk22)
+      lamcont(i, j) = bet*(xl21-xl22)
+      If (.Not. done) Then
+        If (lamline(i,j)>neglect .Or. lamcont(i,j)>neglect) Then
+          iend(i-1) = j
+          done = .True.
+        End If
+      End If
+    End Do
+    If (.Not. done) iend(i-1) = i + 1
+  End Do
+
+! print*,' icount1 = ',icount1,' icount2 = ',icount2
+
+  Do i = 1, ndstat
+    l = i + lstat - 1
+    alo(l) = lamline(i, i)
+!   write(*,999)
+!   'alo',l,alo(l),beta(l),opal(l)*r(nd),taunue(i),lamcont(i,i),sc(l)
+  End Do
+
+
+  Do i = 1, ndstat
+
+!   calculate Jbar from full lambda matrices
+    l = i + lstat - 1
+    is1 = istart(i) + lstat - 1
+    ie1 = iend(i) + lstat - 1
+    ajlmean(l) = dot_product(lamline(i,istart(i):iend(i)), sline(is1:ie1)) + &
+      dot_product(lamcont(i,istart(i):iend(i)), sc(is1:ie1))
+!   print*,i,l,ajlmean(l),sline(l),sc(l)
+  End Do
+
+! forget outer boundary condition; wrong in any case.
+
+! lower boundary condition
+  aic = sc(nd) !                    assuming that the model is thermalized
+
+  Do i = ndstat, 1, -1
+    l = i + lstat - 1
+    betq1 = betaq(i, ndstat)
+    dt = taunue(ndstat) - taunue(i)
+    e1 = xl2(betq1, dt, xl3a)
+
+!   until further evidence neglect diffuse term
+!   (assuming that tau_tot is large and that only quantities until lwion1-1
+!   are needed)
+
+!   diff = xl3a * corrfc * dbdr / opal (nd)
+!   if (beta(nd).gt.1.) diff=diff*betq1/beta(nd) ! rough correction for
+!   beta(nd) ne betaqq
+
+    ajlmean(l) = ajlmean(l) + e1*aic ! + diff
+  End Do
+
+! now interpolation between louter (sobo) and lstat (static approach)
+
+  rstar = r(lstatin)
+
+! interpolation log y vs log v
+! note:  correction for dilution (r^2 terms); only "source terms, i.e., &
+! betacic and jbar, need to be considered. alo and beta (-> ps1) unaffected.
+
+! from numerous tests using realist models, it turned out that in most
+! cases only a correction for the interpolation is required; for the lower
+! photosphere, it leads to erroneous results. Only for very weak winds the
+! correction improves the consistency with cmf-calculations
+
+
+! note; previously, we interpolated between louter and lstat+1
+
+  dv = log(velo(louter)/velo(lstatin))
+  xouter1 = ps1
+  xinner1 = alo(lstatin)
+  bb1 = log(xouter1/xinner1)/dv
+
+  xouter2 = betacic*(r(louter)/rstar)**2
+  xinner2 = (ajlmean(lstatin)-alo(lstatin)*sline(lstatin))
+  bb2 = log(xouter2/xinner2)/dv
+
+  Do l = louter, nd
+    If (l<lstatin) Then
+      term1 = xouter1*(velo(l)/velo(louter))**bb1
+!     diluted quantity, needs to be corrected before interpolation
+      term2 = xouter2*(velo(l)/velo(louter))**bb2*(rstar/r(l))**2 ! correction
+!     for
+!     dilution
+      alo(l) = term1
+      ajlmean(l) = term2
+!     note that only values l ge louter+1 are finally transfered
+!     but checked that term1 and term2 at l=louter exactly = 1.-beta and
+!     betacic, respectively
+    Else
+!     term2=(ajlmean(l)-alo(l)*sline(l))*(rstar/r(l))**2 ! correction for
+!     dilution
+      term2 = (ajlmean(l)-alo(l)*sline(l)) ! no longer corrected
+      ajlmean(l) = term2
+!     alo already defined
+    End If
+
+  End Do
+
+! rstar=r(nd)
+! for tests
+! do l=louter,nd
+! ajm=ajlmean(l)+alo(l)*sline(l) ! in Sobo, alo=1.-beta = ps1
+! rraic=(r(l)/rstar)**2/aic
+! write(*,10) l,ajm*rraic,alo(l),ajlmean(l)*rraic
+! enddo
+
+  flag = .True.
+  flagcmf = .False.
+
+  Return
+100 Format (A3, 2X, I2, 2X, 6(E9.3,2X))
+
+110 Format (I2, 3(2X,E10.4))
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine xgrid
+
+  Use :: nlte_type
+  Use :: fund_const, Only: wpi => sqpi
+  Use :: phot_lines, Only: nf, phi, pweight
+
+  Implicit None
+
+  Real (dp), Parameter :: xmax = 4.D0
+
+  Integer (i4b) :: i
+
+  Real (dp) :: dx, summ, x
+
+  dx = xmax/float(nf-1)
+
+  summ = 0.
+
+  Do i = 1, nf
+    x = xmax - (i-1)*dx
+    phi(i) = exp(-x*x)/wpi
+    summ = summ + phi(i)
+  End Do
+
+  pweight = 0.5*phi/summ !          normalized to 0.5 since integration from 0
+! to xmax
+
+  Return
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Function xk2a(beta, tau1, xl2aval)
+
+  Use :: nlte_type
+  Use :: phot_lines
+
+  Implicit None
+
+  Real (dp) :: xk2a
+
+  Real (dp), Intent (In) :: beta, tau1
+  Real (dp), Intent (Out) :: xl2aval
+
+  Real (dp), Parameter :: xk2_0 = 0.19947114D0 ! 0.5/sqrt(2pi)
+
+  Integer (i4b) :: nb, nt
+
+  Real (dp) :: tau, xtau, xbeta, xm, xk2a1, xk2a2, xl2a1, xl2a2, xl2a, expint2
+
+  If (tau1<1.D-10) Then
+    tau = 1.D-10
+  Else
+    tau = tau1
+  End If
+
+  xtau = log10(tau)
+
+  xbeta = log10(beta)
+
+  If (xbeta<betamin) xbeta = betamin
+
+  If (xbeta>betamax) Then
+    xl2aval = 0.5*expint2(tau1*beta)/beta
+    xk2a = xl2aval*2.*xk2_0
+    Return
+  End If
+
+  If (xtau<taumin .Or. xtau>taumax) Then
+    Write (999, *) xtau, ' out of range in kl-tables'
+    Write (999, *) ' stop: xtau out of range in kl-tables'
+    Print *, xtau, ' out of range in kl-tables'
+    Stop ' xtau out of range in kl-tables'
+  End If
+
+  nb = nint(xbeta*10.) + 101
+  nt = nint(xtau*100.) + 1001
+
+  If (abs(xbeta-betatab(nb))>0.051D0) Then
+    Write (999, *) xbeta, betatab(nb)
+    Write (999, *) ' stop: error in beta-gridpoint: xk2a'
+    Print *, xbeta, betatab(nb)
+    Stop ' error in beta-gridpoint: xk2a'
+  End If
+
+  If (abs(xtau-tautab(nt))>0.0051D0) Then
+    Write (999, *) xtau, tautab(nt)
+    Write (999, *) ' stop: error in tau-gridpoint'
+    Print *, xtau, tautab(nt)
+    Stop ' error in tau-gridpoint'
+  End If
+
+! tauout=10.**tautab(nt)
+! interpolation in beta
+  If (nb==nbdim) nb = nbdim - 1
+  xm = (xbeta-betatab(nb))/(betatab(nb+1)-betatab(nb))
+
+  xk2a1 = xk2atab(nb, nt)
+  xk2a2 = xk2atab(nb+1, nt)
+  If (xk2a1/=0. .And. xk2a2/=0.) Then
+    xk2a1 = log10(xk2a1)
+    xk2a2 = log10(xk2a2)
+    xk2a = xm*(xk2a2-xk2a1) + xk2a1
+    xk2a = 10.**xk2a
+  Else
+    xk2a = 0.D0
+  End If
+
+  xl2a1 = xl2atab(nb, nt)
+  xl2a2 = xl2atab(nb+1, nt)
+  If (xl2a1/=0. .And. xl2a2/=0.) Then
+    xl2a1 = log10(xl2a1)
+    xl2a2 = log10(xl2a2)
+    xl2a = xm*(xl2a2-xl2a1) + xl2a1
+    xl2aval = 10.**xl2a
+  Else
+    xl2aval = 0.
+  End If
+
+! print*,betatab(nb),betatab(nb+1),xbeta
+! print*,xk2a1,xk2a2,xk2a
+! print*,xl2a1,xl2a2,xl2aval
+! print*
+  Return
+
+End Function
+
+!-------------------------------------------------------------------
+
+Function xl2(beta, tau1, xl3a)
+
+  Use :: nlte_type
+  Use :: phot_lines
+
+  Implicit None
+
+  Real (dp) :: xl2
+
+  Real (dp), Intent (In) :: beta, tau1
+  Real (dp), Intent (Out) :: xl3a
+
+  Integer (i4b) :: nb, nt
+  Real (dp) :: tau, xbeta, xtau, arg, expint2, expin
+
+  If (tau1<1.D-10) Then
+    tau = 1.D-10
+  Else
+    tau = tau1
+  End If
+
+  xbeta = log10(beta)
+  xtau = log10(tau)
+! needs to be checked!
+  If (xbeta<betamin) xbeta = betamin
+  If (xbeta>betamax) Then
+    arg = beta*tau1
+    xl2 = 0.5*expint2(arg)
+    xl3a = 0.5*expin(3, arg)*exp(-arg)/beta
+    Return
+
+  End If
+  If (xtau<taumin .Or. xtau>taumax) Then
+    Write (999, *) xtau, ' out of range in kl-tables'
+    Write (999, *) ' stop: xtau out of range in kl-tables'
+    Print *, xtau, ' out of range in kl-tables'
+    Stop ' xtau out of range in kl-tables'
+  End If
+
+  nb = nint(xbeta*10.) + 101
+  nt = nint(xtau*100.) + 1001
+  If (abs(xbeta-betatab(nb))>0.051) Then
+    Write (999, *) ' stop: error in beta-gridpoint: xl2_2'
+    Stop ' error in beta-gridpoint: xl2_2'
+  End If
+
+  If (abs(xtau-tautab(nt))>0.0051) Then
+    Write (999, *) ' stop: error in tau-gridpoint'
+    Stop ' error in tau-gridpoint'
+  End If
+
+  xl2 = xl2tab(nb, nt)
+  xl3a = xl3atab(nb, nt)
+
+  Return
+
+End Function
+
+!-------------------------------------------------------------------
+
+Function xk2a_simple(beta1, beta2, tau, xl2a)
+! simple integration, xmax=4 and nf=21 sufficient
+! factor 0.5 missing, since integration only from 0 to xmax
+
+  Use :: nlte_type
+  Use :: phot_lines, Only: nf, phig => phi, pweight
+
+  Implicit None
+
+  Real (dp) :: xk2a_simple
+
+  Real (dp), Intent (In) :: beta1, beta2, tau
+  Real (dp), Intent (Out) :: xl2a
+
+  Integer (i4b) :: i
+  Real (dp) :: sumk, suml, phi, arg, xint, expint2
+
+  sumk = 0.
+  suml = 0.
+  Do i = 1, nf
+    phi = phig(i)
+    arg = (beta1+phi)*tau
+    xint = pweight(i)/(beta2+phi)*expint2(arg)
+    sumk = sumk + phi*xint
+    suml = suml + xint
+  End Do
+  xk2a_simple = sumk
+  xl2a = suml
+
+  Return
+End Function
+
+!----------------------------------------------------------------------------
+
+Function expint2(x)
+! fast 2nd exponential integral
+
+  Use :: nlte_type
+
+  Implicit None
+
+  Real (dp), Intent (In) :: x
+  Real (dp) :: expint2
+
+  Real (dp) :: a0, a1, a2, a3, a4, a5, b1, b2, b3, b4, c1, c2, c3, c4
+
+  Real (dp) :: e1, sum1, sum2
+
+  Data a0, a1, a2, a3, a4, a5/ -.57721566, .99999193, -.24991055, .05519968, &
+    -.00976004, .00107857/
+  Data b1, b2, b3, b4/8.5733287401, 18.0590169730, 8.6347608925, .2677737343/
+  Data c1, c2, c3, c4/9.5733223454, 25.6329561486, 21.0996530827, &
+    3.9584969228/
+
+
+  If (x>100.) Then
+    expint2 = 0.
+    Return
+  End If
+
+  If (x==0.) Then
+    expint2 = 1.
+    Return
+  End If
+
+  If (x<=1.) Then
+    e1 = a0 + x*(a1+x*(a2+x*(a3+x*(a4+x*a5)))) - log(x)
+  Else
+    sum1 = b4 + x*(b3+x*(b2+x*(b1+x)))
+    sum2 = c4 + x*(c3+x*(c2+x*(c1+x)))
+    e1 = exp(-x)/x*sum1/sum2
+  End If
+
+  expint2 = exp(-x) - x*e1
+  Return
+End Function
+
+!-------------------------------------------------------------------
+
+Subroutine xgrid_diff
+
+  Use :: nlte_type
+  Use :: fund_const, Only: wpi => sqpi
+  Use :: phot_lines_diff, Only: nf, phi, pweight
+
+  Implicit None
+
+  Real (dp), Parameter :: xmax = 4.D0
+
+  Integer (i4b) :: i
+
+  Real (dp) :: dx, summ, x
+
+  dx = xmax/float(nf-1)
+
+  Do i = 1, nf
+    x = xmax - (i-1)*dx
+    phi(i) = exp(-x*x)/wpi
+  End Do
+
+  summ = 0.
+  Do i = 1, nf - 1
+    pweight(i) = 2.*phi(i) !        positive and negative frequencies
+    summ = summ + pweight(i)
+  End Do
+
+  pweight(nf) = phi(nf) !           zero frequency only once
+  summ = summ + pweight(nf)
+
+
+  pweight = pweight/summ !          normalized to 0.5 since integration from 0
+! to xmax
+
+  Return
+End Subroutine
+
+!-----------------------------------------------------------------------
+
+Subroutine jbar_phot_diff(ajlmean, alo, r, velo, temp, opal, sline, beta, &
+  sc, ps1, betacic, louter, lstatin, xlambda, corrfc, flag, flagcmf)
+
+! NOTE!!!
+
+! calculates jbar and alo from solving the 2nd order differential equation
+! of RT (formal solution only)
+
+! so far, a constant Doppler width at vth(k) is assumed
+
+
+! output is jbar-alo*sline and alo
+
+! between louter and lstatin, an interpolation between static and Sobolev
+! transfer is performed.
+
+! r and v in absolute units
+
+! here, beta is opac/opal, and ps1 is 1.-beta(sob) at louter(kel)
+
+
+  Use :: nlte_type
+  Use :: nlte_dim, Only: id_ndept
+  Use :: phot_lines_diff
+
+  Implicit None
+  Integer (i4b), Parameter :: nd = id_ndept
+
+  Real (dp), Dimension (nd), Intent (In) :: r, velo, temp, opal, sline, beta, sc
+  Real (dp), Dimension (nd), Intent (Out) :: ajlmean, alo
+
+  Integer (i4b), Intent (In) :: louter, lstatin
+  Real (dp), Intent (In) :: ps1, betacic, xlambda, corrfc
+
+  Logical, Intent (Out) :: flag, flagcmf
+
+  Real (dp), Dimension (nd) :: taunue, dtau, s, source, ta, tb, tc, tc1
+
+  Integer (i4b) :: lstat, ndstat, l, i, k, j
+
+  Real (dp) :: del, dt, taulast, aic, dbdr, phik, betal, fac, op, opold, dtp, &
+    dtm, dt0, aux, aux2, mu2, dv, xouter1, xinner1, bb1, xouter2, xinner2, &
+    bb2, term1, term2, rstar
+
+! for the complete range, to avoid edge effects
+  lstat = louter
+
+  ndstat = nd - lstat + 1
+
+  ajlmean = 0.
+  alo = 0.
+
+! check at first whether sobo-transfer sufficient or
+! whether cmf-transport is necessary
+
+! tau-grid
+  taunue(1) = 1.D-8
+
+  Do l = lstat, nd - 1
+    i = l + 1 - lstat
+    del = r(l) - r(l+1)
+    dt = del*0.5*(opal(l)+opal(l+1))
+    taunue(i+1) = taunue(i) + dt
+  End Do
+
+  taulast = taunue(ndstat)
+
+! if (taulast.lt.1.0) then
+! changed by JP (Jan. 2015), to avoid oscillations (with and without RT)
+  If (taulast<0.1) Then
+!   line very weak, Sobo sufficient
+    flag = .False.
+    flagcmf = .False.
+    Return
+  End If
+
+
+
+  If (taunue(3)>1.) Then
+!   optically thick around louter, needs cmf transfer
+    flag = .False.
+    flagcmf = .True.
+    Return
+  End If
+
+
+! diffusion approx. for lower boundary; works also when r in absolute units
+  Call diffus(xlambda, temp, r, nd, aic, dbdr)
+
+! now formal solution for all frequencies (nf) and angles (nmu)
+! profile functions and weights from xgrid_diff;
+! angles and weights from module phot_lines_diff
+
+  Do k = 1, nf
+!   angle independent quantities
+    phik = phi(k)
+!   outermost point
+    l = lstat
+    betal = beta(l)
+    fac = phik + betal
+    op = opal(l)*fac
+    s(l) = phik/fac*sline(l) + betal/fac*sc(l)
+
+!   other points
+    Do l = lstat + 1, nd
+      opold = op
+      betal = beta(l)
+      fac = phik + betal
+      op = opal(l)*fac
+      dtau(l-1) = 0.5*(opold+op)*(r(l-1)-r(l))
+      s(l) = phik/fac*sline(l) + betal/fac*sc(l)
+    End Do
+
+    Do j = 1, nmu
+!     build up tri-diagonal matrix (-ta, tb, -tc) and source term
+
+!     outer boundary condition, 2nd order, a la Mihalas
+!     (multiplied with 2 mu /dtp to be consistent with ALO)
+      l = lstat
+      dtp = dtau(l)
+      aux = mu(j)/dtp
+      aux2 = 2.D0*aux
+      ta(l) = 0.
+      tb(l) = (aux+1.D0+0.5D0/aux)*aux2
+      tc(l) = aux*aux2
+      source(l) = s(l)
+
+!     intermediate points
+      Do l = lstat + 1, nd - 1
+        dtm = dtp
+        dtp = dtau(l)
+        dt0 = 0.5D0*(dtm+dtp)
+        mu2 = musq(j)
+        ta(l) = mu2/(dtm*dt0)
+        tb(l) = mu2/dt0*(1.D0/dtm+1.D0/dtp) + 1.D0
+        tc(l) = mu2/(dtp*dt0)
+!       source needs to be updated, since overwritten in INVTRI
+        source(l) = s(l)
+      End Do
+
+!     inner boundary condition, 2nd order, a la Mihalas
+!     (multiplied with 2 mu /dtp to be consistent with ALO)
+      l = nd
+      aux = mu(j)/dtp !             dtp from above is dtm local
+      aux2 = 2.D0*aux
+      ta(l) = aux*aux2
+      tb(l) = (aux+1.D0+0.5D0/aux)*aux2
+      tc(l) = 0.
+      source(l) = (aic+corrfc*mu(j)*dbdr/op)*aux2 + s(l) ! op
+!     angle-independent,
+!     survived from upper
+!     loop
+
+      tc1 = tc !                    save for alo calculation
+
+!     solution of tridiag system; source and tc overwritten
+      Call invtri(ta(lstat:nd), tb(lstat:nd), tc(lstat:nd), source(lstat:nd), &
+        ndstat)
+
+!     calculation of the diagonal of the inverse of T = alo_tot (k,j)
+      Call diag(ta(lstat:nd), tb(lstat:nd), tc1(lstat:nd), tc(lstat:nd), &
+        ndstat, 0)
+!     integration of jbar and alo
+      Do l = lstat, nd
+        ajlmean(l) = ajlmean(l) + source(l)*wmu(j)*pweight(k)
+        alo(l) = alo(l) + tc(l)*wmu(j)*pweight(k)*phik/(phik+beta(l))
+      End Do
+
+    End Do !                        angle loop
+  End Do !                          frequency loop
+
+  rstar = r(lstatin)
+
+! interpolation log y vs log v
+! note:  correction for dilution (r^2 terms); only "source terms, i.e., &
+! betacic and jbar, need to be considered. alo and beta (-> ps1) unaffected.
+
+! from numerous tests using realist models, it turned out that in most
+! cases only a correction for the interpolation is required; for the lower
+! photosphere, it leads to erroneous results. Only for very weak winds the
+! correction improves the consistency with cmf-calculations
+
+
+! note; previously, we interpolated between louter and lstat+1
+
+  dv = log(velo(louter)/velo(lstatin))
+  xouter1 = ps1
+  xinner1 = alo(lstatin)
+  bb1 = log(xouter1/xinner1)/dv
+
+  xouter2 = betacic*(r(louter)/rstar)**2
+  xinner2 = (ajlmean(lstatin)-alo(lstatin)*sline(lstatin))
+  bb2 = log(xouter2/xinner2)/dv
+
+  Do l = louter, nd
+    If (l<lstatin) Then
+      term1 = xouter1*(velo(l)/velo(louter))**bb1
+!     diluted quantity, needs to be corrected before interpolation
+      term2 = xouter2*(velo(l)/velo(louter))**bb2*(rstar/r(l))**2 ! correction
+!     for
+!     dilution
+      alo(l) = term1
+      ajlmean(l) = term2
+!     note that only values l ge louter+1 are finally transfered
+!     but checked that term1 and term2 at l=louter exactly = 1.-beta and
+!     betacic, respectively
+    Else
+!     term2=(ajlmean(l)-alo(l)*sline(l))*(rstar/r(l))**2 ! correction for
+!     dilution
+      term2 = (ajlmean(l)-alo(l)*sline(l)) ! no longer corrected
+      ajlmean(l) = term2
+!     alo already defined
+    End If
+
+  End Do
+
+! rstar=r(nd)
+! for tests
+! print*
+! print*,louter,lstatin,xlambda
+! do l=louter,nd
+! ajm=ajlmean(l)+alo(l)*sline(l) ! in Sobo, alo=1.-beta = ps1
+! rraic=(r(l)/rstar)**2/aic
+! write(*,10) l,ajm*rraic,alo(l),ajlmean(l)*rraic
+! enddo
+! print*
+
+! if(xlambda .gt. 1238.148 .and. xlambda .lt. 1238.15) stop
+
+  flag = .True.
+  flagcmf = .False.
+
+  Return
+
+100 Format (I2, 3(2X,E10.4))
+End Subroutine
+
+!----------------------------------------------------------------------------
+
+Subroutine cmf_simple(ajlmean, alo, r, vr, dvdr, temp, opalin, sline, &
+  opacin, etacin, scont, vdop, xlambda, corr, betamin)
+
+! simplified cmf transfer for background elements (where necessary)
+! output is alo and jbar-alo*sline
+
+! here, r, v, vr and dvdr are dimensionless (normalized),
+! and the opacities/emissivities need to be multiplied by
+! Rstar and Rstar/vinf to be consistent with the standard approach
+
+! opal needs additional correction by vdop = vth(k) = vdop(teff,vmicro)
+! correction for depth dependent vdop in fgrid
+
+  Use :: nlte_type
+  Use :: nlte_dim, Only: id_ndept, id_npoin, id_nfcmf
+
+  Use :: run_once, Only: start_cmf_simple
+
+  Use :: nlte_var, Only: sr, vmax
+
+  Use :: nlte_var, Only: z, p, tauz1, tau1, pp1, slinek, ak1, az1, w0 => vp, &
+    w0last
+
+  Use :: nlte_app, Only: teff
+
+  Implicit None
+  Integer (i4b), Parameter :: nd = id_ndept, np = id_npoin
+  Integer (i4b), Parameter :: nf = id_nfcmf
+
+  Real (dp), Dimension (nd), Intent (Out) :: ajlmean, alo
+  Real (dp), Dimension (nd), Intent (In) :: r, vr, dvdr, temp
+  Real (dp), Dimension (nd), Intent (In) :: opalin, sline, opacin, etacin, &
+    scont
+
+  Real (dp), Intent (In) :: xlambda, corr, betamin
+
+  Real (dp), Dimension (nd) :: opal, opac, etac, ucmf, pp
+  Real (dp), Dimension (nd-1) :: vcmf
+  Real (dp), Dimension (nd, np-1) :: ubluwi
+
+  Real (dp), Dimension (nf, nd) :: phi, pweight
+
+  Real (dp) :: aic, dbdr, srvmax, rl, xmue, xmue2, deltax, vdop, &
+    xmax0, xmax1, aux, opalk, etak, opakk
+
+  Integer (i4b) :: jp, lmax, l, lz, k
+
+
+! line-independent quantities
+  If (start_cmf_simple) Then
+!   might have already been calculated in cmf (nlte), &
+!   but recalculate in any case (previous update possible)
+
+jploop1: Do jp = 1, np - 1
+      lmax = min0(np+1-jp, nd)
+      lz = lmax - 1
+
+      Do l = 1, lz
+        tauz1(l, jp) = 1.D0/(z(l,jp)-z(l+1,jp))
+      End Do
+
+      Do l = 2, lz
+        tau1(l, jp) = 2.D0/(z(l-1,jp)-z(l+1,jp))
+      End Do
+
+!     pp(l)=velocity gradient,projected on the present ray
+
+      Do l = 1, lmax
+        rl = r(l)
+        xmue = z(l, jp)/rl
+        xmue2 = xmue*xmue
+        pp1(l, jp) = xmue2*dvdr(l) + (1.D0-xmue2)*vr(l)
+      End Do
+
+    End Do jploop1
+
+    start_cmf_simple = .False.
+  End If
+
+  Call diffus(xlambda, temp, r, nd, aic, dbdr)
+! print * ,' dbdr=', dbdr, corr
+
+
+! dimensioning of opacities
+
+  srvmax = vdop*sr/vmax
+  opac = opacin*sr
+  etac = etacin*sr
+  opal = opalin*srvmax
+
+
+! calculation of continuum radiation field at the blue wind frequenc
+
+  Call cont2(nd, np, r, p, z, scont, opac, aic, dbdr, corr, ubluwi)
+
+
+! if (abs(1.-scont(nd)/aic).gt.0.05) stop ' inconsistency between ic-scont'
+! if (abs(1.-xjin/aic).gt.0.05) stop ' inconsistency between ic-xjin'
+
+! calculation of xmax (opal/ddop (xmax) = 0.01 opac)
+  xmax0 = 3.
+! const = 0.01*wpi
+  aux = -log(.0177245*betamin)
+  If (aux>0.) Then
+    xmax1 = sqrt(aux)
+    If (xmax1>xmax0) xmax0 = xmax1
+  End If
+
+! print*,betamin,xmax0
+
+  Call fgrid(nf, nd, phi, pweight, deltax, vdop, vmax, teff, temp, xmax0)
+
+  Do l = 1, nd
+    Do k = 1, nf
+      opalk = phi(k, l)*opal(l)
+      etak = sline(l)*opalk + etac(l)
+      opakk = opalk + opac(l)
+      slinek(k, l) = etak/opakk
+      ak1(k, l) = 1.D0/opakk
+      If (l/=1) az1(k, l-1) = 2.D0/(opakk+1.D0/ak1(k,l-1))
+    End Do
+  End Do
+
+  ajlmean = 0.D0
+  alo = 0.D0
+
+jploop2: Do jp = 1, np - 1
+    lmax = min0(np+1-jp, nd)
+    lz = lmax - 1
+
+!   bluewing boundary condition
+
+    ucmf(1) = ubluwi(1, jp)
+
+    Do l = 1, lz
+      ucmf(l+1) = ubluwi(l+1, jp)
+      aux = .5D0*(opac(l)+opac(l+1))
+      vcmf(l) = (ucmf(l+1)-ucmf(l))/aux/(z(l,jp)-z(l+1,jp))
+    End Do
+
+    Do l = 1, lmax
+      pp(l) = pp1(l, jp)/deltax
+    End Do
+
+    Call ray(.True., 1, 1, jp, z(:,jp), r, nd, np, ucmf, vcmf, sline, phi, &
+      pweight, deltax, opac, etac, opal, aic, dbdr, corr, w0(:,jp), w0last, &
+      ajlmean, alo, tauz1(:,jp), tau1(:,jp), pp, xlambda)
+
+  End Do jploop2
+
+! this is the output quantity
+  ajlmean = ajlmean - alo*sline
+
+  Return
+End Subroutine
+
+!----------------------------------------------------------------------------
+
+Subroutine start_expl_lines(teff)
+
+! JO June 2023 introduced to allow subr. fgrid_lines to be invoked
+! at first call of frescal (info about fgrid)
+
+  Use :: nlte_type
+  Use :: nlte_dim
+  Use :: fund_const, Only: akb, amh
+  Use :: fastwind_params, Only: fpath1
+
+  Use :: nlte_var, Only: vturb
+  Use :: nlte_app, Only: nrec_met => nrec, kel, iel, xion, vth
+
+  Implicit None
+
+  Real (dp) :: teff
+
+  Integer (i4b) :: i, irec, k, j, idum, level, lev, ios
+
+! cf. routine atomdat
+  Open (211, File=fpath1//'generalinfo', Status='OLD', Err=100, Iostat=ios)
+  Do i = 1, nrec_met
+    Read (211, *) irec, kel(i), iel(i)
+  End Do
+  Close (211)
+
+  Open (213, File=fpath1//'atomnl2_meta_v2.0', Status='OLD', Err=110, &
+    Iostat=ios)
+  Do i = 1, nrec_met
+    k = kel(i)
+    j = iel(i)
+    Read (213, *) idum, idum, idum, level, xion(k, j)
+    Do lev = 1, level
+      Read (213, *) idum
+    End Do
+  End Do
+  Close (213)
+
+  vth(8) = sqrt(2.*akb*teff/(amh*16.000D0)+vturb*vturb)
+
+  Return
+
+100 Write (999, *) ' ERROR WITH generalinfo, IOSTAT=', ios
+  Write (*, *) ' ERROR WITH generalinfo, IOSTAT=', ios
+  Write (999, *) ' most likely, directory for background element data missing!'
+  Write (999, *) ' check parameter fpath1!'
+  Write (*, *) ' most likely, directory for background element data missing!'
+  Write (*, *) ' check parameter fpath1!'
+  Stop
+110 Write (999, *) ' ERROR WITH atomnl2_meta, IOSTAT=', ios
+  Write (*, *) ' ERROR WITH atomnl2_meta, IOSTAT=', ios
+  Stop
+
+End Subroutine
+
+!----------------------------------------------------------------------------
+
+Subroutine frescal_expl_lines(wwavblue, wwavred, wwavcon)
+
+! JO June 2023 added at end of frescal, to include those NLAMBOXes
+! which are additionally required for calculation of irradiation of
+! explicit lines
+
+  Use :: nlte_type
+  Use :: nlte_dim
+
+  Use :: princesa_var, Only: index1, indat1, data
+
+  Use :: nlte_var, Only: fre, ifre, fre_lines, ifre_lines
+
+  Use :: nlte_lines, Only: fgrid, nlam, calcopal, calcopal1, wavblue, wavred, &
+    wavcon
+
+  Implicit None
+
+  Real (dp), Intent (Out) :: wwavblue, wwavred, wwavcon
+
+
+  Integer (i4b) :: i, ii, j, nlambox, indi, m
+  Real (dp) :: lam, er, meanlam
+
+  calcopal = 0
+  Do i = 1, ifre
+    lam = 1.D8/fre(i)
+    If (lam>wavblue .And. lam<wavred) Then
+      nlambox = 1 + log(lam/wavblue)/wavcon
+      If (nlambox<1 .Or. nlambox>nlam) Then
+        Write (999, *) ' stop: error in nlambox (frescal_expl_lines)'
+        Stop ' error in nlambox (frescal_expl_lines)'
+      End If
+      calcopal(nlambox) = 1
+    End If
+  End Do
+
+  calcopal1 = calcopal
+
+  Do ii = 1, index1
+    indi = indat1(ii)
+    er = data(indi)
+    m = int(er)
+    If (m/=1) Cycle
+    lam = data(indi+1)
+    If (lam>=910.) Cycle
+!   test (no or almost no add. freq. points
+!   if(lam.ge.120.) cycle
+!   print*,ii,lam
+    If (lam>wavblue .And. lam<wavred) Then
+      nlambox = 1 + log(lam/wavblue)/wavcon
+      calcopal1(nlambox) = 1
+    End If
+  End Do
+
+  j = 0
+  Do i = 1, nlam
+    If (calcopal1(i)/=calcopal(i)) Then
+      If (calcopal1(i)/=1) Then
+        Write (999, *) ' stop: error in calcopal1 (frescal_expl_lines)'
+        Stop ' error in calcopal1 (frescal_expl_lines)'
+      End If
+
+      If (calcopal(i)/=0) Then
+        Write (999, *) ' stop: error in calcopal (frescal_expl_lines)'
+        Stop ' error in calcopal (frescal_expl_lines)'
+      End If
+!     meanlam=0.5*(fgrid(i)+fgrid(i+1))
+!     nlambox = 1 + log(meanlam/wavblue)/wavcon
+!     if(nlambox.ne.i) stop ' error in nlambox (frescal_met)'
+      j = j + 1
+    End If
+  End Do
+  ifre_lines = j
+
+  Print *
+  Write (*, 100) ifre_lines, wavblue
+  Print *
+
+  If (allocated(fre_lines)) Then
+    Write (999, *) ' stop: fre_lines allocated in frescal_expl_lines'
+    Stop ' fre_lines allocated in frescal_expl_lines'
+  End If
+  Allocate (fre_lines(ifre_lines))
+  j = 0
+  Do i = 1, nlam
+    If (calcopal1(i)/=calcopal(i)) Then
+      meanlam = 0.5*(fgrid(i)+fgrid(i+1))
+      nlambox = 1 + log(meanlam/wavblue)/wavcon
+      If (nlambox/=i) Then
+        Write (999, *) ' stop: error in nlambox (frescal_expl_lines)'
+        Stop ' error in nlambox (frescal_expl_lines)'
+      End If
+      j = j + 1
+      fre_lines(j) = 1.D8/meanlam
+    End If
+  End Do
+
+! transfer to nlte
+  wwavblue = wavblue
+  wwavred = wavred
+  wwavcon = wavcon
+
+  Return
+
+100 Format (I3, ' additional frequencies from explicit lines in the range ', &
+    F7.1, ' to 910 A')
+
+End Subroutine

@@ -1,0 +1,2 @@
+program vaul allows, from input of observed magnitudes, theoretical
+fluxes, and distance, to calculate the stellar radius.

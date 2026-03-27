@@ -1,0 +1,10 @@
+Source info in the generalinfo file:
+
+    1 = SUPERSTRUCTURE data
+    2 = Kurucz data
+    3 = only NL3 file has Kurucz data (to top up the SUPERSTRUCTURE
+        data), source for the other data is a SUPERSTRUCTURE run
+        NOTE: The NL3 file is overwritten, only SS data for levels
+              in model ion left in there, i.e. SS data for transitions
+              with upper level greater than zero!!!
+

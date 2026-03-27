@@ -1,0 +1,13 @@
+Skript gestartet auf 2026-03-27 11:29:55+01:00 [TERM="xterm-256color" TTY="/dev/pts/2" COLUMNS="110" LINES="28"]
+7]2;uh101aw on mpusm02: /e/ocean1/users/uh101aw/nlte_v11/make_ATOMDAT_2016_new]1;mpusm028[?1h=Unloading compiler/latest[m
+  Unloading useless requirement: umf/latest compiler-rt/latest tbb/latest[m
+[K[?1l>[?1h=Loading compiler/latest[m
+  Loading requirement: tbb/latest compiler-rt/latest umf/latest[m
+[K[?1l>xset: Befehl nicht gefunden.
+xset: Befehl nicht gefunden.
+xset: Befehl nicht gefunden.
+xset: Befehl nicht gefunden.
+nlte_v11/make_ATOMDAT_2016_new> ls[Kexit
+exit
+
+Skript beendet auf 2026-03-27 11:30:12+01:00 [COMMAND_EXIT_CODE="0"]

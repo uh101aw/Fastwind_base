@@ -1,0 +1,12 @@
+!path=!path+':.:/home/klein/uh101aw/idlproc:/home/klein/uh101aw/idlproc/miguel:/home/klein/uh101aw/idlproc/textoidl:/home/klein/uh101aw/idlproc/elias_idl/graphics:/home/klein/uh101aw/massloss/idl_lib:/home/klein/uh101aw/massloss/idl_lib/ourprog/tasho/in_out:/home/klein/uh101aw/massloss/idl_lib/astron/pro'
+!path =  !path + ':' + $
+          expand_path('+/home/klein/uh101aw/idlproc/coyote')
+
+;!path=!path+':.:/e/ocean1/users/uh101aw/nlte_v11/inicalc/idlproc
+
+device,retain=2,decompose=0,true_color=24
+.run convol
+.run /home/klein/uh101aw/massloss/idl_lib/astron/pro/readfits
+
+dire11='/e/ocean1/users/uh101aw/nlte_v11/optical_11.5.0/dir_D45_lowz_lowHe/'
+dire10='/e/ocean1/users/uh101aw/nlte_v10/obstars_CNO/adigrid/dir_D45_lowz_lowHe/'

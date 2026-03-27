@@ -1,0 +1,66 @@
+#!/bin/bash
+#comment: the command || : in diff prevents that an exit on error occurs
+#when files are different
+
+#compilations
+#mkatom: make mkatom in build (mkatom.f90 in atom)
+#execution in build
+
+#meta_2.0.eo: ifort meta_2.0.f [pathes in metacom, check that Ok] 
+#             f90 sources in dir_atomnl2_meta
+#execution in dir_atomnl2_meta 
+
+#conv_ascii_add_HHelines.eo: ifort conv_ascii_add_HHelines.f90 [check pathes],
+#  source is in main dir
+#execution in main dir 
+
+trap 'echo "Error on line $LINENO"' ERR
+set -e
+
+export ATOM_DIR='./'
+export ATOM_SRC='./'
+
+cd fw_data
+
+../build/mkatom
+
+echo 'diff ../wmbasic_data/nl3info Line-List-Bin-Source/nl3info'
+diff ../wmbasic_data/nl3info Line-List-Bin-Source/nl3info || :
+read -p "Press [Enter] key to continue..."
+echo
+
+mv atom* ../fw_data_new
+mv  generalinfo ../fw_data_new
+mv Line-List-Bin-Source/nl3* ../fw_data_new
+
+
+echo 'update finished, new files in fw_data_new'
+read -p "Press [Enter] key to continue..."
+echo
+
+echo 'create atomnl2_meta_v2.0 and nl3*_all_ascii files (without add. H/He) '
+echo
+
+cd ..
+
+cp wmbasic_data/ionisen fw_data_new/.
+cp wmbasic_data/partit fw_data_new/.
+
+cd dir_atomnl2_meta
+
+meta_2.0.eo
+
+mv atomnl2_meta_v2.0 ../fw_data_new/.
+
+echo 'atomnl2_meta_v2.0 and nl3*_all_ascii files (without add. H/He) created'
+echo
+
+echo 'include additional H/He lines into line list (with ending *.all) in fw_data_new'
+echo
+
+cd ..
+conv_ascii_add_HHelines.eo
+
+rm fw_data_new/nl3?
+
+echo 'finished, all required files are located in fw_data_new'

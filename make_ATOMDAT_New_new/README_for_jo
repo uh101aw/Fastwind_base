@@ -1,0 +1,18 @@
+in original version, GENERALINFO and ATOMGF3 not consistent with
+nl3 files.
+
+BUT: THIS IS NOT NECESSARY.
+
+but, when improving Al_III, we need consistent files to recreate the
+data base (via mkatom from Adi's group) when only exchanging certain
+ions.
+
+Thus, GENERALINFO and ATOMGF3 have now changed, but are consistent
+with nl3 files.
+
+----------------------
+Still to do: Cl_I and F_I files. NVI (also problematic needs to be
+checked for only one line
+
+DONE!
+----------------------

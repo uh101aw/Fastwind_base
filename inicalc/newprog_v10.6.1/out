@@ -1,0 +1,18 @@
+233,235c233,238
+<   
+<   
+< character*10 :: ver_nlte_app='7.5.2' 
+---
+> !
+> !version 7.5.3 Nov 2022:    few changes (OPT_EXTEND_H_WINGS default = FALSE),
+> !                           no line blocking in sumopal_nlte/sumopal_lte
+> !                           for k=8 AND up=0 (still needs to be checked)  
+> !  
+> character*10 :: ver_nlte_app='7.5.3' 
+4896c4899,4900
+< 
+---
+>    if(k.eq.8.and.up.eq.0) cycle lines
+>    
+5561a5566
+>    if(k.eq.8.and.up.eq.0) cycle lines

@@ -1,0 +1,11 @@
+rm dir_atomnl2_meta/nl3*
+rm dir_atomnl2_meta/gfdens.dat
+rm fw_data/html/index.html
+rm fw_data/html/cat/*.html
+rm fw_data/html/data/ener.*
+rm fw_data/html/data/tran.*
+rm fw_data/html/data/lines*nl3
+rm fw_data_new/atom*
+rm fw_data_new/ionisen
+rm fw_data_new/partit
+rm fw_data_new/nl3?_all

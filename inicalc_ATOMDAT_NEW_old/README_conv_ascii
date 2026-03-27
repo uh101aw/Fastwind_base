@@ -1,0 +1,13 @@
+Check modify path for nl3info!
+
+for nlte_approx below 7 compile conv_ascii.f and run it. 
+
+for nlte_approx ge 7 compile conv_ascii_add_HHelines.f90 and run it
+nl3_add_HHelines to be used for correct upper levels 
+nl3_add_HHelines_v1 only for specific tests (upper level = 0)
+
+should end with message "success"
+
+print_line_list.f90: reads binary files, output including nl3_add_HHelines 
+
+print_line_list.f90_from_ascii: reads original ascii files, thus output without nl3_add_HHelines 

@@ -1,0 +1,12 @@
+nl3*_all_orig (as from original data base by Adi) deleted. 
+Can be found under ~uh101aw/ATOMDAT/old/ATOMDAT_NEW/wmbasic_data: nl3*
+
+and can be re-created from nl3*all_ascii via conv_ascii.f
+(consistency checked by Jo)
+
+nl3*_all contains additional 16 lines from HHe, created
+from nl3*all_ascii via conv_ascii_add_HHelines.f90 (data in
+nl3_add_HHelines)
+
+nl3info: original data
+nl3info_all: additional HHe lines
