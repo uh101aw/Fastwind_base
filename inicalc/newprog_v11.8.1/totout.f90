@@ -33,7 +33,7 @@ Program totout
 ! departure coeff (dim=nlev,nd)
 ! ionization fractions (dim=nkis+1,natom,nd)
 ! lambda(dim=nfreq)
-! f-nue (dim=nfreq) at outermost radius point
+! h-nue (dim=nfreq)
 ! trad_eff(dim=nfreq)
 
 

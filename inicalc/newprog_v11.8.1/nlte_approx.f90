@@ -339,9 +339,8 @@ Module version_nlte_approx
 !   spheric micro-turbulence of around 40 km/s.
 
 ! version 8.7.1 Oct. 2025: polished
-! version 8.7.1.1 April 2026: one stop condition relaxed
-  
-  Character (10) :: ver_nlte_app = '8.7.1.1'
+
+  Character (10) :: ver_nlte_app = '8.7.1'
 
 End Module
 
@@ -7213,9 +7212,7 @@ atom: Do k = 1, natom
 !       in the outer region, both values should be fairly equal, but sometimes
 !       larger differences are possible (up to 50%)
         If (js>=lwion) Then
-!          If (abs(1.-fjk(k,j,js)/fjkold)>1.D-13) Then
-! Jo April 2026
-          If (abs(1.-fjk(k,j,js)/fjkold)>1.D-7) Then
+          If (abs(1.-fjk(k,j,js)/fjkold)>1.D-13) Then
             Write (999, *) k, j, js, fjkold, fjk(k, j, js)
             Write (999, *) ' stop: fjk from IONIS and IONIS_FULL_LTE &
               &not equal in inner region'

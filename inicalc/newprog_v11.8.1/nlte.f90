@@ -990,23 +990,12 @@ Module version_nlte
 ! version: 11.8.1 Dec 2025:
 !   polished with nag-tools
 
-! version: 11.8.1.1 April 2026: checked that external models by
-!  M. Cure can be digested also in v11. One modification applied
-!  to enable calculation with xmet = Z = 0!  
-!  Otherwise: files GRAD.OUT AND GRAD_START.OUT modified. Now, first
-!  character variable is RADACC*r^2, to indicate that the displayed
-!  quantity is r^2 times grad, and not grad alone. Moreover, in file
-!  CHIBAR_H the second variable is now grad and not r^2 times grad (as in
-!  former versions), for reasons of consistency with file CHIBAR_H_CMF and
-!  other output quantities.  
-  
-  
 ! !! WARNING !!!!
 ! for future calculations, remember that opac_nolines is mean, not
 ! effective opacity
 ! !! WARNING !!!!
 
-  Character (10) :: ver_nlte = '11.8.1.1'
+  Character (10) :: ver_nlte = '11.8.1'
 
 End Module
 
@@ -1222,7 +1211,7 @@ Module nlte_opt
 ! to .false.
 
 ! Enable full cmf-treatment, use cmf_all
-  Logical, Parameter :: optcmf_full = .True.
+  Logical, Parameter :: optcmf_full = .true.
 
 ! Enables update of photo-struct. by using flux-mean around iteration 10
 ! or higher (for OPTCMF_FULL)
@@ -1986,9 +1975,9 @@ Program fastwind
 ! --
 
 ! -- Basic scheme of calculation:
-! In tlucy, calculate r23 = r(taup=2/3). From this value, and using
+! In tlucy, calculate r23= r(taup=2/3). From this value, and using
 ! r(ns) (from modvl) as well as srvmin/srnom = r(ns)/r23,
-! srvmin = srnom*r(ns)/r23 can be calculated.
+! srvmin = = srnom*r(ns)/r23can be calculated.
 
 ! This latter value is iterated in parallel with modvl:
 ! input srvmin -> r(ns) etc.
@@ -2055,21 +2044,8 @@ Program fastwind
 ! UNIT 50-53 (DIRECT ACCESS,scratch):
 ! J,H,K,N (cont), function of energy/lambda, index=L
 
-! 60 CHIBAR_H: chibar_h and grad (actual), the latter from chibar_h
-!              and nominal flux; only photospheric, and from radiation
-!              field using pseudo-continua.
-!              Note that until May 2026, the grad in this file was
-!              r^2*grad, with r in units of SR.  
-! 61 CHIBAR_H_CMF (used only locally)
-!              as above, but from cmf-transport and for complete atmosphere.
-!              Chibar calculated from complete frequency range.
-! 61 GRAD.OUT (used only locally)
-!              r^2 times grad (with r in units of SR), only photospheric,
-!              calculated from radiation field using pseudo-continua 
-! 61 GRAD_START.OUT (used only locally)
-!              r^2 times grad (with r in units of SR), only photospheric,
-!              calculated from radiation field using pseudo-continua, at
-!              an iteration just before structure has been updated.  
+! 60 CHIBAR_H
+! 61 GRAD.OUT, GRAD_START.OUT, and CHIBAR_H_CMF (both used only locally)
 
 ! 70, 71: TABLES FOR ULECTURE (used only locally)
 
@@ -2298,7 +2274,7 @@ Program fastwind
 
 ! no update of phot-struct if external model
   If (optmod) update_struct = .False.
-  
+
 !  If (optcmf_full) Then
 !   start of Ng-extrapolation -- currently not used
 !   If (update_struct) Then
@@ -2411,11 +2387,6 @@ Program fastwind
   optmet = .False.
   If (xmet/=0.) optmet = .True.
 
-  If(.Not. optmet .And. optcmf_all) Then
-   Write (999, *) ' STOP: XMET = 0., BUT OPTCMF_ALL (=v11)'
-   STOP ' XMET = 0., BUT OPTCMF_ALL (=v11)'
-  End If
-  
 ! check for consistency
   If (.Not. optmet .And. lines) Then
     Write (999, *) ' STOP: XMET = 0., BUT LINE-BLOCKING REQUIRED!'
@@ -3149,9 +3120,8 @@ ithydro: Do ithyd = ithyds, 30
   Call fresfin(nd, xnh, temp(nd), .True., teff)
 
 ! redefinition of dilfac to ensure thermalization in nlte_approx
-  
-! Jo April 2026: always
-!  If (optmet) Then
+
+  If (optmet) Then
     Where (dilfac<0.5)
       dilfac1 = dilfac
     Elsewhere
@@ -3163,7 +3133,7 @@ ithydro: Do ithyd = ithyds, 30
         Exit
       End If
     End Do
-!  End If
+  End If
 
   lwion = l + 1
   taurlim = taurlim_default
@@ -6617,10 +6587,7 @@ freloop: Do k = 1, ifre
 ! ---- write actual CHIBAR_H (reg. grid) and grad to file CHIBAR_H
   Rewind 60
   Do l = 1, nd
-!    Write (60, *) l, chibar_h(l), chibar_h(l)*sigsb/clight*teff**4
-! JO 2016: modified, to be consistent with grad from CHIBAR_H_CMF (actual grad)  
-    Write (60, *) l, chibar_h(l), chibar_h(l)*sigsb/clight*teff**4 * &
-      (rtau23/r(l))**2
+    Write (60, *) l, chibar_h(l), chibar_h(l)*sigsb/clight*teff**4
   End Do
 
 ! note: following quantities flux-errors;
@@ -14323,7 +14290,7 @@ Subroutine modvl(teff, xlogg, rstarnom, rmax, tmin, xmloss, vmin, vmax, beta, &
 ! store photospheric rad. acceleration
   Open (61, File=trim(modnam)//'/GRAD.OUT', Status='UNKNOWN')
   Do l = 1, nd
-    Write (61, *) 'RADACC*r^2', l,' ', radacc(l)
+    Write (61, *) 'RADACC ', l, ' ', radacc(l)
   End Do
   Close (61)
 
@@ -15849,13 +15816,9 @@ jloop:  Do j = i1, i2
 !   if(ll.eq.1.or.ll.eq.47) nnuu=ll
 !   if(nnuu.eq.ll) then
 
-    Print * 
-    Print *,ll,': MAXIMUM CHANGE IN OCCUPATION NUMBERS = ', err(ll), ' ', &
+    Print *
+    Print *, ' MAXIMUM CHANGE IN OCCUPATION NUMBERS = ', err(ll), ' ', &
       labl(jerr(1))
-    If (ll.eq.1) Write(999,*)  
-    Write(999,*) ll,': MAXIMUM CHANGE IN OCCUPATION NUMBERS = ', err(ll), ' ', &
-      labl(jerr(1))
-    If (ll.eq.nd) Write(999,*)  
     Write (11, Fmt=*) ll, ' MAX. CHANGE IN OCC. NUMBERS = ', err(ll), ' ', &
       labl(jerr(1))
     Write (11, Fmt=*) ll, ' 2ND  CHANGE IN OCC. NUMBERS = ', err1(2), ' ', &
@@ -30698,7 +30661,7 @@ Subroutine modvl_update(nd, r, velo, dvdr, rho, xne, xnelte, xnh, temp, tau, &
   Logical :: updated
   Logical, Intent (Out) :: update_done
 
-  Character (12) :: char   !length of char actually 10
+  Character (7) :: char
 
   External :: derivs_upd, rkqc
 ! ..
@@ -30708,7 +30671,6 @@ Subroutine modvl_update(nd, r, velo, dvdr, rho, xne, xnelte, xnh, temp, tau, &
   Open (61, File=trim(modnam)//'/GRAD.OUT', Status='UNKNOWN')
   Do l = 1, nd
     Read (61, *) char, i, arho(l)
-!    print*,char,i,arho(l)
   End Do
   Close (61)
 
@@ -31525,7 +31487,7 @@ Subroutine modvl_update(nd, r, velo, dvdr, rho, xne, xnelte, xnh, temp, tau, &
 ! store current photospheric rad. acceleration (start values)
   Rewind 61
   Do l = 1, nd
-    Write (61, *) 'RADACC*r^2', l, ' ', radacc(l)
+    Write (61, *) 'RADACC ', l, ' ', radacc(l)
   End Do
   Close (61)
 
@@ -31533,7 +31495,7 @@ Subroutine modvl_update(nd, r, velo, dvdr, rho, xne, xnelte, xnh, temp, tau, &
 ! store photospheric rad. acceleration (start)
   Open (61, File=trim(modnam)//'/GRAD_START.OUT', Status='UNKNOWN')
   Do l = 1, nd
-    Write (61, *) 'RADACC*r^2', l, ' ', arho(l)
+    Write (61, *) 'RADACC ', l, ' ', arho(l)
   End Do
   Close (61)
 

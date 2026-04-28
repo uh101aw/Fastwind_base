@@ -3638,8 +3638,7 @@ Subroutine cmf_complete(nd, xne, temp, clfac, r, velo, dvdr, rho, taur, xnh, &
 ! and the opacities/emissivities include line and continuum contributions.
 ! line contributions already profile-weighted (depth dependend) and summed
 
-! both line and local continuum quantities (opalk, opac, opakk) multiplied
-! by Rstar (global quantities opac_nolines and opac without Rstar).
+! both line and continuum quantities multiplied by Rstar
 ! line quantities weighted with Rstar/ delta_nue_dop_max = Rstar*lambda/vmax
 ! corrected in profile propto vmax/vdop(r) * exp(-xth(r)^2)/sqrt(pi)
 
@@ -3730,7 +3729,7 @@ Subroutine cmf_complete(nd, xne, temp, clfac, r, velo, dvdr, rho, taur, xnh, &
 
   Real (dp) :: bnue, dbdt, hplus, alo_old
 
-  Integer (i4b) :: i,jp, lmax, l, lz, ind_old, ind, k, kk, k1, kblue, kred, &
+  Integer (i4b) :: jp, lmax, l, lz, ind_old, ind, k, kk, k1, kblue, kred, &
     nsum, counter_u, counter_uneg, counter_v, counter_jneg, counter_alo_zero
 
   Logical :: inversion, cont_blue_thick, start, opt_ray, jneg
@@ -4179,7 +4178,7 @@ freloop: Do k = 1, nftot
       x1o = opac_nolines(:, ind)
       x2o = opac_nolines(:, ind-1)
       expo = log10(x1o/x2o)*de
-      x1o = x1o*sr !                here is the multiplication with sr
+      x1o = x1o*sr !                before, sr cancels out
 
 !     if START = .TRUE., i.e., 1st run THEN
 !     interpolate xj onto corresponding obs. frame frequency
@@ -4254,7 +4253,7 @@ freloop: Do k = 1, nftot
 
 120   Continue
       expe = log10(x1e/x2e)*de
-      x1e = x1e*sr !                here is the multiplication with sr
+      x1e = x1e*sr !                before, sr cancels out
 
       ind_old = ind
     End If
@@ -4289,7 +4288,7 @@ freloop: Do k = 1, nftot
 !   write(*,987) k,xlambda,opalk(43),opakk(43),slinek(43),etac(43)
 !   endif
 !   987 format('output',i5,f10.5,4(2x,e10.5))
-   
+
 !   total line source function, needed for alo in ray_complete
     Do l = 1, nd
       If (opalk(l)==0.) Then
@@ -4692,7 +4691,7 @@ jploop2: Do jp = 1, np - 1
 
 !   rad. acc calculated on staggered grid
 !   remember:use ah, ahweight without boundaries, i.e., from 2:ND
-!   rad_force is total, actual rad_acc (without factor r^2) on staggered grid
+!   total rad_acc
 !   JO check for clumping
     ydum = opakk/rho
     ydum1 = 0.5D0*(ydum(1:nd-1)+ydum(2:nd))
@@ -4987,12 +4986,11 @@ jploop2: Do jp = 1, np - 1
   chibar_h = chibar_h/sr !          since opakk includes SR
 
   Print *
-  Print *, ' L  grad(stag) grad(grid) grad(nom_flux) chibar_h (all cmf-range)'
+  Print *, ' L  grad(stag) grad(grid) grad(nom_flux) chibar_h(cmf-range)'
   Open (1, File=trim(modnam)//'/out_rad_force')
   Do l = 1, nd - 1
 !   now on approximate staggered grid:
-!   accelerations from 1:ND-1 (calculated above),
-!   fluxes (ah*r^2) from 2:ND (calculated in ray and moments)
+!   accelerations from 1:ND-1, fluxes (ah*r^2) from 2:ND
     rdum = (r(l)+r(l+1))*0.5
     vdum = velo(l) + (velo(l+1)-velo(l))/(r(l+1)-r(l))*(rdum-r(l))
     ah_int(l+1) = ah_int(l+1)*r2(l+1)
@@ -5000,20 +4998,16 @@ jploop2: Do jp = 1, np - 1
       ah_int(l+1)
 !   check consistency:
 !   usually, grad(grid)(l) should lie in between grad(stag)(l-1) and
-!   grad(stag)(l).
+!   grad(stag)(l)
 !   differences between grad(grid) and grad(nom_flux) when flux different from
-!   nom. flux.
-!   NOTE: int Hnu dnu here only for CMF range. In lower atmospheres of hot
-!   stars, this can be significantly smaller that nominal flux,
-!   since blue range (approx. method) might contribute a lot.
-!   Thus: H_nom > H_range, and grad(nom_flux) > grad(grid)
-!
-!   remember:
-!   ah is actual Eddington flux on staggered grid
-!   xh is r^2 times Eddingtion flux on whole-number grid (r in units of SR).
-
-    rdum = sigsb*teff**4/clight*(rtau23/r(l))**2 ! r in units of R(taup=2/3)
-! rtau23 = srnom (=nominal radius)/sr (=radius at lowermost point)
+!   nom. flux
+!   NOTE: int Hnu dnu here only for CMF range. In lower atmosphere of hot
+!   stars,
+!   this can be significantly smaller that nominal flux, since blue range
+!   (approx. method)
+!   might contribute a lot. Thus: H_nom > H_range, and grad(nom_flux) >
+!   grad(grid)
+    rdum = sigsb*teff**4/clight*(rtau23/r(l))**2
     vdum = 4.*pi/(clight*r(l)*r(l))
     chibar_h_cmf(l) = chibar_h(l)/(xh_int(l)*rho(l))
 !   new column chibar_h_cmf included
@@ -5023,8 +5017,7 @@ jploop2: Do jp = 1, np - 1
   chibar_h_cmf(nd) = chibar_h(nd)/(xh_int(nd)*rho(nd))
   Close (1)
   Print *
-  print*,'out_rad_force written'
-  
+
 ! outer boundary (so far, ah_int no longer used from here on)
   ah_int(1) = ah_int(1)*r2(1)
   ah_int(nd+1) = ah_int(nd+1)*r2(nd+1)
@@ -5243,10 +5236,10 @@ jploop2: Do jp = 1, np - 1
 !   here was a bug, cured Sept 12 2019
 !   write(61,*) l,chibar_h(l),chibar_h(l)*sigsb*teff**4/clight
     If (abs(1.-chibar_h_cmf(l)/chibar_h(l))>0.1) Then
-      Write (999, *) ' WARNING WARNING: chibar_h in complete and CMF &
+      Write (999, *) ' WARNING WARNING: chibar_h in CMF and complete &
         &range significantly different:', l, ' ', chibar_h(l), ' ', &
         chibar_h_cmf(l)
-      Print *, ' WARNING WARNING: chibar_h in complete and CMF &
+      Print *, ' WARNING WARNING: chibar_h in CMF and complete &
         &range significantly different:', l, ' ', chibar_h(l), ' ', &
         chibar_h_cmf(l)
     End If

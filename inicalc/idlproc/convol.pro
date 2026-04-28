@@ -561,7 +561,7 @@ IF KEYWORD_SET(vdop) or KEYWORD_SET(ain) or KEYWORD_SET(resol) THEN BEGIN
    l=2l^iout-m+1
    n=l+m-1
    print,'lambda min/max = ',sxx(0),sxx(nn-1),' nn = ',nn
-   print,'piecewise convolution (vmacro) with',nn/l+1,' segments'
+   print,'piecewise convolution (resol) with',nn/l+1,' segments'
    print,'L = ',l,' and N = ',n
    if(l gt nn/2) then begin
      print,l,' > ', nn/2

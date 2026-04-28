@@ -1,7 +1,11 @@
-pro plot_range,model,resoltheo,ext,modelcomp=modelcomp,resol=resol, $
+pro plot_range,model,resoltheo,ext,lam1,prof1,lam2,prof2, $
+		modelcomp=modelcomp,theo=theo,resol=resol, $
 		vsini=vsini,vmacro=vmacro
-  readcol,model+'/OUT.UV_00900_02000__'+resoltheo+'_'+ext,idum,lam1,xhdum1,prof1,xhdum1
 
+  readcol,model+'/OUT.UV_00900_02000__'+resoltheo+'_'+ext,idum,lam1,xhdum1,prof1,xhdum1
+  readcol,model+'/OUT.UV_03400_07000__'+resoltheo+'_'+ext,idum,lam2,xhdum1,prof2,xhdum1
+  if keyword_set(theo) then return
+  
   if keyword_set(modelcomp) then begin
     readcol,modelcomp+'/OUT.UV_00900_02000__'+resoltheo+'_'+ext,idum,lam1c,xhdum1,prof1c,xhdum1
   endif
@@ -28,7 +32,6 @@ pro plot_range,model,resoltheo,ext,modelcomp=modelcomp,resol=resol, $
 
   plot,lam1,prof1,xrange=[1500,2000],xs=1,yrange=[0,2],ys=1
   if keyword_set(modelcomp) then oplot,lam1c,prof1c,col=200
-
   readcol,model+'/OUT.UV_03400_07000__'+resoltheo+'_'+ext,idum,lam2,xhdum1,prof2,xhdum1
 
   if keyword_set(modelcomp) then begin
