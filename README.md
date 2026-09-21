@@ -12,7 +12,7 @@ enter (paste) the following address (here: for inicalc)
 
 `https://github.com/uh101aw/Fastwind_base/tree/main/inicalc`
 
-The following directories can be downloaded **later** (in a similar way), if at all:<br>
+The following directories can be downloaded **later** (in a similar way), if alternative data bases for background elements were required:<br>
 **inicalc_ATOMDAT_NEW_old**: if comparison with previous versions (until v10.7.x/v11.7.x) aimed at.<br>
 **inicalc_ATOMDAT_2016_new**: if extended atomic structure (mostly for low ionization stages) shall be
 tested/implemented<br>
