@@ -6,7 +6,8 @@ Program totout
 ! sept 2006 reading/output of clf
 ! oct 2014 length of cat (*50) and related
 ! sept 2015 recalc. of pressure (to account for update of T and Ne)
-! nov 20255 polished
+! nov 2025 polished
+! aug 2026 bug in output for differences in pnew vs. p cured
   
   Use :: nlte_type
   Use :: nlte_dim
@@ -211,12 +212,13 @@ Program totout
   End If
 
 ! recalculate pressure
-  err = 1.D100
+  err = 0.
   Do l = 1, nd
     xmu = summass/(sumabu+xne(l)/xnh(l)) ! NOTE THAT XNH ONLY APPROX.
     csound = 1.3806D-16/(xmu*1.673D-24)
     pnew(l) = rho(l)*temp(l)*csound
-    err = min(err, abs(1.-pnew(l)/p(l)))
+    err = max(err, abs(1.-pnew(l)/p(l)))
+!    print*,l,pnew(l),p(l),1.-pnew(l)/p(l)
   End Do
 
 
